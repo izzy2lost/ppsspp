@@ -1,4 +1,4 @@
-name: Manual Generate UWP MSIX/MSIXBundle
+name: Xbox UWP Build
 on:
   workflow_dispatch:
     inputs:
