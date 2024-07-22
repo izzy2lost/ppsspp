@@ -2,26 +2,6 @@ name: Xbox UWP Build
 on:
   workflow_dispatch:
     inputs:
-      buildConfiguration:
-        type: choice
-        description: 'Build Configuration'
-        required: true
-        default: 'Release'
-        options: 
-        - Release
-        - Debug
-
-      buildPlatform:
-        type: choice
-        description: 'Build Platform'
-        required: true
-        default: 'Bundle'
-        options: 
-        - Bundle
-        - x64
-        - ARM64
-        - ARM
-
       signedPackage:
         type: boolean
         description: 'Signed Package'
@@ -30,7 +10,7 @@ on:
 
 jobs:
   build-uwp:
-    name: Generate ${{ github.event.inputs.buildConfiguration }} ${{ github.event.inputs.buildPlatform }} UWP
+    name: Generate Release x64 UWP
     runs-on: windows-2022
 
     steps:
@@ -70,21 +50,11 @@ jobs:
       - name: Execute MSIX build
         working-directory: ${{ github.workspace }}
         env:
-          INCLUDE_SYMBOLS: ${{ github.event.inputs.buildConfiguration == 'Debug' && 'true' || 'false' }}
-        if: ${{ github.event.inputs.buildPlatform != 'Bundle' }}
+          INCLUDE_SYMBOLS: false
         run: |
           echo "include symbols = ${{ env.INCLUDE_SYMBOLS }}"
-          msbuild UWP/PPSSPP_UWP.sln /m /p:TrackFileAccess=false /p:Configuration=${{ github.event.inputs.buildConfiguration }} /p:Platform=${{ github.event.inputs.buildPlatform }} /p:IncludeSymbols=${{ env.INCLUDE_SYMBOLS }} /p:AppxSymbolPackageEnabled=${{ env.INCLUDE_SYMBOLS }} /p:AppxPackageSigningEnabled=${{ github.event.inputs.signedPackage }} /p:PackageCertificateThumbprint="${{ env.THUMBPRINT }}" /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundlePlatforms="${{ github.event.inputs.buildPlatform }}"
+          msbuild UWP/PPSSPP_UWP.sln /m /p:TrackFileAccess=false /p:Configuration=Release /p:Platform=x64 /p:IncludeSymbols=${{ env.INCLUDE_SYMBOLS }} /p:AppxSymbolPackageEnabled=${{ env.INCLUDE_SYMBOLS }} /p:AppxPackageSigningEnabled=${{ github.event.inputs.signedPackage }} /p:PackageCertificateThumbprint="${{ env.THUMBPRINT }}" /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundlePlatforms="x64"
 
-      - name: Execute MSIXBundle build
-        working-directory: ${{ github.workspace }}
-        env:
-          INCLUDE_SYMBOLS: ${{ github.event.inputs.buildConfiguration == 'Debug' && 'true' || 'false' }}
-        if: ${{ github.event.inputs.buildPlatform == 'Bundle' }}
-        run: |
-          echo "include symbols = ${{ env.INCLUDE_SYMBOLS }}"
-          msbuild UWP/PPSSPP_UWP.sln /m /p:TrackFileAccess=false /p:Configuration=${{ github.event.inputs.buildConfiguration }} /p:Platform=x64 /p:IncludeSymbols=${{ env.INCLUDE_SYMBOLS }} /p:AppxSymbolPackageEnabled=${{ env.INCLUDE_SYMBOLS }} /p:AppxPackageSigningEnabled=${{ github.event.inputs.signedPackage }} /p:PackageCertificateThumbprint="${{ env.THUMBPRINT }}" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundlePlatforms="x64|ARM64|ARM"
-          
       - name: Package build
         working-directory: ${{ github.workspace }}
         run: |
@@ -94,5 +64,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UWP-${{ github.event.inputs.buildConfiguration }}-${{ github.event.inputs.buildPlatform }} build
+          name: UWP-Release-x64 build
           path: ppsspp/
