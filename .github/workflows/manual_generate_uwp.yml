@@ -67,10 +67,6 @@ jobs:
         run: |
           echo "PACKAGE_NAME=${{ github.event.inputs.package_name }}_${{ github.event.inputs.tag_name }}" >> $GITHUB_ENV
 
-      - name: Verify Thumbprint
-        run: echo "Using Certificate Thumbprint: ${{ env.THUMBPRINT }}"
-        shell: pwsh
-
       - name: Execute MSIX build
         working-directory: ${{ github.workspace }}
         env:
