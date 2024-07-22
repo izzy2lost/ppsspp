@@ -1,0 +1,98 @@
+name: Manual Generate UWP MSIX/MSIXBundle
+on:
+  workflow_dispatch:
+    inputs:
+      buildConfiguration:
+        type: choice
+        description: 'Build Configuration'
+        required: true
+        default: 'Release'
+        options: 
+        - Release
+        - Debug
+
+      buildPlatform:
+        type: choice
+        description: 'Build Platform'
+        required: true
+        default: 'Bundle'
+        options: 
+        - Bundle
+        - x64
+        - ARM64
+        - ARM
+
+      signedPackage:
+        type: boolean
+        description: 'Signed Package'
+        required: true
+        default: true
+
+jobs:
+  build-uwp:
+    name: Generate ${{ github.event.inputs.buildConfiguration }} ${{ github.event.inputs.buildPlatform }} UWP
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Check Valid Version Tags
+        id: valid-tags
+        shell: bash
+        run: |
+          echo "count=$(git tag -l 'v[0-9]*' | wc -l | tr -d ' ')" >> $GITHUB_OUTPUT # $env:GITHUB_OUTPUT on pwsh
+          
+      - name: Fetch upstream tags # required for git describe to return a valid version on a new fork
+        if: ${{ steps.valid-tags.outputs.count == '0' }}
+        run: |
+          # TODO: should try to fetch tags from whereever this repo was forked from before fetching from official repo
+          git remote add upstream https://github.com/hrydgard/ppsspp.git # fetching from official repo as a fallback
+          git fetch --deepen=15000 --no-recurse-submodules --tags upstream || exit 0
+        
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+          
+      - name: Generate Self-Signed Certificate
+        id: generate_cert
+        run: |
+          $cert = New-SelfSignedCertificate -CertStoreLocation "Cert:\CurrentUser\My" -Subject "CN=MyUWPCert" -KeyAlgorithm RSA -KeyLength 2048 -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" -KeyExportPolicy Exportable -NotAfter (Get-Date).AddYears(1) -Type CodeSigningCert
+          echo "THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Set Package Name
+        id: set_package_name
+        run: |
+          echo "PACKAGE_NAME=${{ github.event.inputs.package_name }}_${{ github.event.inputs.tag_name }}" >> $GITHUB_ENV
+
+      - name: Execute MSIX build
+        working-directory: ${{ github.workspace }}
+        env:
+          INCLUDE_SYMBOLS: ${{ github.event.inputs.buildConfiguration == 'Debug' && 'true' || 'false' }}
+        if: ${{ github.event.inputs.buildPlatform != 'Bundle' }}
+        run: |
+          echo "include symbols = ${{ env.INCLUDE_SYMBOLS }}"
+          msbuild UWP/PPSSPP_UWP.sln /m /p:TrackFileAccess=false /p:Configuration=${{ github.event.inputs.buildConfiguration }} /p:Platform=${{ github.event.inputs.buildPlatform }} /p:IncludeSymbols=${{ env.INCLUDE_SYMBOLS }} /p:AppxSymbolPackageEnabled=${{ env.INCLUDE_SYMBOLS }} /p:AppxPackageSigningEnabled=${{ github.event.inputs.signedPackage }} /p:PackageCertificateThumbprint="${{ env.THUMBPRINT }}" /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundlePlatforms="${{ github.event.inputs.buildPlatform }}"
+
+      - name: Execute MSIXBundle build
+        working-directory: ${{ github.workspace }}
+        env:
+          INCLUDE_SYMBOLS: ${{ github.event.inputs.buildConfiguration == 'Debug' && 'true' || 'false' }}
+        if: ${{ github.event.inputs.buildPlatform == 'Bundle' }}
+        run: |
+          echo "include symbols = ${{ env.INCLUDE_SYMBOLS }}"
+          msbuild UWP/PPSSPP_UWP.sln /m /p:TrackFileAccess=false /p:Configuration=${{ github.event.inputs.buildConfiguration }} /p:Platform=x64 /p:IncludeSymbols=${{ env.INCLUDE_SYMBOLS }} /p:AppxSymbolPackageEnabled=${{ env.INCLUDE_SYMBOLS }} /p:AppxPackageSigningEnabled=${{ github.event.inputs.signedPackage }} /p:PackageCertificateThumbprint="${{ env.THUMBPRINT }}" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxBundlePlatforms="x64|ARM64|ARM"
+          
+      - name: Package build
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir ppsspp
+          cp -r UWP/AppPackages/PPSSPP_UWP/*.* ppsspp/
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UWP-${{ github.event.inputs.buildConfiguration }}-${{ github.event.inputs.buildPlatform }} build
+          path: ppsspp/
