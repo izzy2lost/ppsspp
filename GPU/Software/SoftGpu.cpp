@@ -628,6 +628,7 @@ void SoftGPU::CopyToCurrentFboFromDisplayRam(int srcwidth, int srcheight) {
 	}
 	if (!hasImage) {
 		draw_->BindFramebufferAsRenderTarget(nullptr, { Draw::RPAction::CLEAR, Draw::RPAction::DONT_CARE, Draw::RPAction::DONT_CARE }, "CopyToCurrentFboFromDisplayRam");
+		presentation_->NotifyPresent();
 		return;
 	}
 
@@ -654,6 +655,17 @@ void SoftGPU::CopyDisplayToOutput(bool reallyDirty) {
 	// The display always shows 480x272.
 	CopyToCurrentFboFromDisplayRam(FB_WIDTH, FB_HEIGHT);
 	MarkDirty(displayFramebuf_, displayStride_, 272, displayFormat_, SoftGPUVRAMDirty::CLEAR);
+}
+
+void SoftGPU::BeginHostFrame() {
+	GPUCommon::BeginHostFrame();
+	if (presentation_) {
+		presentation_->BeginFrame();
+	}
+}
+
+bool SoftGPU::PresentedThisFrame() const {
+	return presentation_->PresentedThisFrame();
 }
 
 void SoftGPU::MarkDirty(uint32_t addr, uint32_t stride, uint32_t height, GEBufferFormat fmt, SoftGPUVRAMDirty value) {
@@ -1237,6 +1249,9 @@ void SoftGPU::Execute_Call(u32 op, u32 diff) {
 	const u32 target = gstate_c.getRelativeAddress(op & 0x00FFFFFC);
 	if (!Memory::IsValidAddress(target)) {
 		ERROR_LOG(Log::G3D, "CALL to illegal address %08x - ignoring! data=%06x", target, op & 0x00FFFFFF);
+		if (g_Config.bIgnoreBadMemAccess) {
+			return;
+		}
 		gpuState = GPUSTATE_ERROR;
 		downcount = 0;
 		return;

@@ -535,9 +535,14 @@ void GPUCommonHW::CopyDisplayToOutput(bool reallyDirty) {
 
 	shaderManager_->DirtyLastShader();
 
+	// after this, render pass is active.
 	framebufferManager_->CopyDisplayToOutput(reallyDirty);
 
 	gstate_c.Dirty(DIRTY_TEXTURE_IMAGE);
+}
+
+bool GPUCommonHW::PresentedThisFrame() const {
+	return framebufferManager_->PresentedThisFrame();
 }
 
 void GPUCommonHW::DoState(PointerWrap &p) {
@@ -1751,7 +1756,7 @@ size_t GPUCommonHW::FormatGPUStatsCommon(char *buffer, size_t size) {
 		"Draw: %d (%d dec, %d culled), flushes %d, clears %d, bbox jumps %d (%d updates)\n"
 		"Vertices: %d dec: %d drawn: %d\n"
 		"FBOs active: %d (evaluations: %d)\n"
-		"Textures: %d, dec: %d, invalidated: %d, hashed: %d kB\n"
+		"Textures: %d, dec: %d, invalidated: %d, hashed: %d kB, clut %d\n"
 		"readbacks %d (%d non-block), upload %d (cached %d), depal %d\n"
 		"block transfers: %d\n"
 		"replacer: tracks %d references, %d unique textures\n"
@@ -1776,6 +1781,7 @@ size_t GPUCommonHW::FormatGPUStatsCommon(char *buffer, size_t size) {
 		gpuStats.numTexturesDecoded,
 		gpuStats.numTextureInvalidations,
 		gpuStats.numTextureDataBytesHashed / 1024,
+		gpuStats.numClutTextures,
 		gpuStats.numBlockingReadbacks,
 		gpuStats.numReadbacks,
 		gpuStats.numUploads,

@@ -142,8 +142,8 @@ void System_AudioClear() {}
 void System_AudioPushSamples(const s32 *audio, int numSamples) {}
 
 // TODO: To avoid having to define these here, these should probably be turned into system "requests".
-bool NativeSaveSecret(const char *nameOfSecret, const std::string &data) { return false; }
-std::string NativeLoadSecret(const char *nameOfSecret) {
+bool NativeSaveSecret(std::string_view nameOfSecret, std::string_view data) { return false; }
+std::string NativeLoadSecret(std::string_view nameOfSecret) {
 	return "";
 }
 
@@ -318,9 +318,9 @@ std::vector<std::string> ReadFromListFile(const std::string &listFilename) {
 int main(int argc, const char* argv[])
 {
 	PROFILE_INIT();
+	TimeInit();
 #if PPSSPP_PLATFORM(WINDOWS)
 	SetCleanExitOnAssert();
-	timeBeginPeriod(1);
 #else
 	// Ignore sigpipe.
 	if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
@@ -501,7 +501,7 @@ int main(int argc, const char* argv[])
 	g_Config.iGlobalVolume = VOLUME_FULL;
 	g_Config.iReverbVolume = VOLUME_FULL;
 	g_Config.internalDataDirectory.clear();
-	g_Config.bUseNewAtrac = newAtrac;
+	g_Config.bUseExperimentalAtrac = newAtrac;
 
 	Path exePath = File::GetExeDirectory();
 	g_Config.flash0Directory = exePath / "assets/flash0";

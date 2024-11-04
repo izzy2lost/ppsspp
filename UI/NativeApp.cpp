@@ -28,7 +28,7 @@
 // Background worker threads should be spawned in NativeInit and joined
 // in NativeShutdown.
 
-#include <locale.h>
+#include <clocale>
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
@@ -529,7 +529,7 @@ void NativeInit(int argc, const char *argv[], const char *savegame_dir, const ch
 
 	LogManager *logman = LogManager::GetInstance();
 
-	const char *fileToLog = 0;
+	const char *fileToLog = nullptr;
 	Path stateToLoad;
 
 	bool gotBootFilename = false;
@@ -659,7 +659,7 @@ void NativeInit(int argc, const char *argv[], const char *savegame_dir, const ch
 					}
 				}
 			} else {
-				fprintf(stderr, "Can only boot one file");
+				fprintf(stderr, "Syntax error: Can only boot one file.\nNote: Many command line args need a =, like --appendconfig=FILENAME.ini.\n");
 #if defined(_WIN32) || defined(__ANDROID__)
 				// Ignore and proceed.
 #else
@@ -729,8 +729,7 @@ void NativeInit(int argc, const char *argv[], const char *savegame_dir, const ch
 	}
 #endif
 
-	// TODO: Load these in the background instead of synchronously.
-	g_BackgroundAudio.SFX().LoadSamples();
+	g_BackgroundAudio.SFX().Init();
 
 	if (!boot_filename.empty() && stateToLoad.Valid()) {
 		SaveState::Load(stateToLoad, -1, [](SaveState::Status status, std::string_view message, void *) {
@@ -1210,7 +1209,7 @@ bool HandleGlobalMessage(UIMessage message, const std::string &value) {
 		return true;
 	} else if (message == UIMessage::SAVESTATE_DISPLAY_SLOT) {
 		auto sy = GetI18NCategory(I18NCat::SYSTEM);
-		std::string msg = StringFromFormat("%s: %d", std::string(sy->T("Savestate Slot")).c_str(), SaveState::GetCurrentSlot() + 1);
+		std::string msg = StringFromFormat("%s: %d", sy->T_cstr("Savestate Slot"), SaveState::GetCurrentSlot() + 1);
 		// Show for the same duration as the preview.
 		g_OSD.Show(OSDType::MESSAGE_INFO, msg, 2.0f, "savestate_slot");
 		return true;
@@ -1322,7 +1321,7 @@ bool NativeKey(const KeyInput &key) {
 	double now = time_now_d();
 
 	// VR actions
-	if (IsVREnabled() && !UpdateVRKeys(key)) {
+	if ((IsVREnabled() || g_Config.bForceVR) && !UpdateVRKeys(key)) {
 		return false;
 	}
 
@@ -1372,7 +1371,7 @@ bool NativeKey(const KeyInput &key) {
 
 void NativeAxis(const AxisInput *axes, size_t count) {
 	// VR actions
-	if (IsVREnabled() && !UpdateVRAxis(axes, count)) {
+	if ((IsVREnabled() || g_Config.bForceVR) && !UpdateVRAxis(axes, count)) {
 		return;
 	}
 
@@ -1536,22 +1535,24 @@ void NativeShutdown() {
 // In the future, we might make this more sophisticated, such as storing in the app private directory on Android.
 // Right now we just store secrets in separate files next to ppsspp.ini. The important thing is keeping them out of it
 // since we often ask people to post or send the ini for debugging.
-static Path GetSecretPath(const char *nameOfSecret) {
+static Path GetSecretPath(std::string_view nameOfSecret) {
 	return GetSysDirectory(DIRECTORY_SYSTEM) / ("ppsspp_" + std::string(nameOfSecret) + ".dat");
 }
 
 // name should be simple alphanumerics to avoid problems on Windows.
-bool NativeSaveSecret(const char *nameOfSecret, const std::string &data) {
+bool NativeSaveSecret(std::string_view nameOfSecret, std::string_view data) {
 	Path path = GetSecretPath(nameOfSecret);
-	if (!File::WriteDataToFile(false, data.data(), data.size(), path)) {
-		WARN_LOG(Log::System, "Failed to write secret '%s' to path '%s'", nameOfSecret, path.c_str());
+	if (data.empty() && File::Exists(path)) {
+		return File::Delete(path);
+	} else if (!File::WriteDataToFile(false, data.data(), data.size(), path)) {
+		WARN_LOG(Log::System, "Failed to write secret '%.*s' to path '%s'", (int)nameOfSecret.size(), nameOfSecret.data(), path.c_str());
 		return false;
 	}
 	return true;
 }
 
 // On failure, returns an empty string. Good enough since any real secret is non-empty.
-std::string NativeLoadSecret(const char *nameOfSecret) {
+std::string NativeLoadSecret(std::string_view nameOfSecret) {
 	Path path = GetSecretPath(nameOfSecret);
 	std::string data;
 	if (!File::ReadBinaryFileToString(path, &data)) {

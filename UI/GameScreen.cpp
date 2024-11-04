@@ -30,6 +30,7 @@
 #include "Common/File/FileUtil.h"
 #include "Common/StringUtils.h"
 #include "Common/System/System.h"
+#include "Common/System/OSD.h"
 #include "Common/System/Request.h"
 #include "Common/System/NativeApp.h"
 #include "Core/Config.h"
@@ -50,7 +51,7 @@
 #include "UI/SavedataScreen.h"
 #include "Core/Reporting.h"
 
-GameScreen::GameScreen(const Path &gamePath) : UIDialogScreenWithGameBackground(gamePath) {
+GameScreen::GameScreen(const Path &gamePath, bool inGame) : UIDialogScreenWithGameBackground(gamePath), inGame_(inGame) {
 	g_BackgroundAudio.SetGame(gamePath);
 	System_PostUIMessage(UIMessage::GAME_SELECTED, gamePath.ToString());
 }
@@ -79,8 +80,13 @@ void GameScreen::update() {
 		if (Reporting::HasCRC(gamePath_)) {
 			uint32_t crcvalue = Reporting::RetrieveCRC(gamePath_);
 			CRC32string = int2hexstr(crcvalue);
-			tvCRC_->SetVisibility(UI::V_VISIBLE);
-			tvCRC_->SetText(CRC32string);
+			if (tvCRC_) {
+				tvCRC_->SetVisibility(UI::V_VISIBLE);
+				tvCRC_->SetText(CRC32string);
+			}
+			if (tvCRCCopy_) {
+				tvCRCCopy_->SetVisibility(UI::V_VISIBLE);
+			}
 			if (btnCalcCRC_) {
 				btnCalcCRC_->SetVisibility(UI::V_GONE);
 			}
@@ -109,6 +115,21 @@ void GameScreen::CreateViews() {
 
 	ViewGroup *leftColumn = new AnchorLayout(new LinearLayoutParams(1.0f));
 	root_->Add(leftColumn);
+
+	bool fileTypeSupportCRC = false;
+	if (info) {
+		switch (info->fileType) {
+		case IdentifiedFileType::PSP_PBP:
+		case IdentifiedFileType::PSP_PBP_DIRECTORY:
+		case IdentifiedFileType::PSP_ISO_NP:
+		case IdentifiedFileType::PSP_ISO:
+			fileTypeSupportCRC = true;
+			break;
+
+		default:
+			break;
+		}
+	}
 
 	leftColumn->Add(new Choice(di->T("Back"), "", false, new AnchorLayoutParams(150, WRAP_CONTENT, 10, NONE, NONE, 10)))->OnClick.Handle(this, &GameScreen::OnSwitchBack);
 	if (info->Ready(GameInfoFlags::PARAM_SFO)) {
@@ -145,9 +166,33 @@ void GameScreen::CreateViews() {
 		tvPlayTime_ = infoLayout->Add(new TextView("", ALIGN_LEFT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
 		tvPlayTime_->SetShadow(true);
 		tvPlayTime_->SetVisibility(V_GONE);
-		tvCRC_ = infoLayout->Add(new TextView("", ALIGN_LEFT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
-		tvCRC_->SetShadow(true);
-		tvCRC_->SetVisibility(Reporting::HasCRC(gamePath_) ? V_VISIBLE : V_GONE);
+		
+		LinearLayout *crcHoriz = infoLayout->Add(new LinearLayout(ORIENT_HORIZONTAL));
+
+		if (fileTypeSupportCRC) {
+			// CRC button makes sense.
+			tvCRC_ = crcHoriz->Add(new TextView("", ALIGN_LEFT, true, new LinearLayoutParams(0.0, G_VCENTER)));
+			tvCRC_->SetShadow(true);
+			Visibility crcVisibility = Reporting::HasCRC(gamePath_) ? V_VISIBLE : V_GONE;
+			tvCRC_->SetVisibility(crcVisibility);
+			if (System_GetPropertyBool(SYSPROP_HAS_TEXT_CLIPBOARD)) {
+				tvCRCCopy_ = crcHoriz->Add(new Button(di->T("Copy to clipboard"), new LinearLayoutParams(0.0, G_VCENTER)));
+				tvCRCCopy_->OnClick.Add([this](UI::EventParams &) {
+					u32 crc = Reporting::RetrieveCRC(gamePath_);
+					char buffer[16];
+					snprintf(buffer, sizeof(buffer), "%08X", crc);
+					System_CopyStringToClipboard(buffer);
+					// Success indication. Not worth a translatable string.
+					g_OSD.Show(OSDType::MESSAGE_SUCCESS, buffer, 1.0f);
+					return UI::EVENT_DONE;
+				});
+				tvCRCCopy_->SetVisibility(crcVisibility);
+				tvCRCCopy_->SetScale(0.82f);
+			} else {
+				tvCRCCopy_ = nullptr;
+			}
+		}
+
 		tvVerified_ = infoLayout->Add(new NoticeView(NoticeLevel::INFO, ga->T("Click \"Calculate CRC\" to verify ISO"), "", new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
 		tvVerified_->SetVisibility(UI::V_GONE);
 		tvVerified_->SetSquishy(true);
@@ -170,6 +215,7 @@ void GameScreen::CreateViews() {
 		tvRegion_ = nullptr;
 		tvPlayTime_ = nullptr;
 		tvCRC_ = nullptr;
+		tvCRCCopy_ = nullptr;
 		tvVerified_ = nullptr;
 	}
 
@@ -180,14 +226,22 @@ void GameScreen::CreateViews() {
 	rightColumnItems->SetSpacing(0.0f);
 	rightColumn->Add(rightColumnItems);
 
-	rightColumnItems->Add(new Choice(ga->T("Play")))->OnClick.Handle(this, &GameScreen::OnPlay);
+	if (!inGame_) {
+		rightColumnItems->Add(new Choice(ga->T("Play")))->OnClick.Handle(this, &GameScreen::OnPlay);
+	}
 
 	btnGameSettings_ = rightColumnItems->Add(new Choice(ga->T("Game Settings")));
 	btnGameSettings_->OnClick.Handle(this, &GameScreen::OnGameSettings);
+
 	btnDeleteGameConfig_ = rightColumnItems->Add(new Choice(ga->T("Delete Game Config")));
 	btnDeleteGameConfig_->OnClick.Handle(this, &GameScreen::OnDeleteConfig);
+	if (inGame_)
+		btnDeleteGameConfig_->SetEnabled(false);
+
 	btnCreateGameConfig_ = rightColumnItems->Add(new Choice(ga->T("Create Game Config")));
 	btnCreateGameConfig_->OnClick.Handle(this, &GameScreen::OnCreateConfig);
+	if (inGame_)
+		btnCreateGameConfig_->SetEnabled(false);
 
 	btnGameSettings_->SetVisibility(V_GONE);
 	btnDeleteGameConfig_->SetVisibility(V_GONE);
@@ -199,7 +253,12 @@ void GameScreen::CreateViews() {
 
 	otherChoices_.clear();
 
-	rightColumnItems->Add(AddOtherChoice(new Choice(ga->T("Delete Game"))))->OnClick.Handle(this, &GameScreen::OnDeleteGame);
+	// Don't want to be able to delete the game while it's running.
+	Choice *deleteChoice = rightColumnItems->Add(AddOtherChoice(new Choice(ga->T("Delete Game"))));
+	deleteChoice->OnClick.Handle(this, &GameScreen::OnDeleteGame);
+	if (inGame_) {
+		deleteChoice->SetEnabled(false);
+	}
 	if (System_GetPropertyBool(SYSPROP_CAN_CREATE_SHORTCUT)) {
 		rightColumnItems->Add(AddOtherChoice(new Choice(ga->T("Create Shortcut"))))->OnClick.Add([=](UI::EventParams &e) {
 			std::shared_ptr<GameInfo> info = g_gameInfoCache->GetInfo(NULL, gamePath_, GameInfoFlags::PARAM_SFO);
@@ -210,9 +269,15 @@ void GameScreen::CreateViews() {
 			return UI::EVENT_DONE;
 		});
 	}
+
 	if (isRecentGame(gamePath_)) {
-		rightColumnItems->Add(AddOtherChoice(new Choice(ga->T("Remove From Recent"))))->OnClick.Handle(this, &GameScreen::OnRemoveFromRecent);
+		Choice *removeButton = rightColumnItems->Add(AddOtherChoice(new Choice(ga->T("Remove From Recent"))));
+		removeButton->OnClick.Handle(this, &GameScreen::OnRemoveFromRecent);
+		if (inGame_) {
+			removeButton->SetEnabled(false);
+		}
 	}
+
 #if (defined(USING_QT_UI) || PPSSPP_PLATFORM(WINDOWS) || PPSSPP_PLATFORM(MAC)) && !PPSSPP_PLATFORM(UWP)
 	rightColumnItems->Add(AddOtherChoice(new Choice(ga->T("Show In Folder"))))->OnClick.Handle(this, &GameScreen::OnShowInFolder);
 #endif
@@ -224,21 +289,6 @@ void GameScreen::CreateViews() {
 	btnSetBackground_ = rightColumnItems->Add(new Choice(ga->T("Use UI background")));
 	btnSetBackground_->OnClick.Handle(this, &GameScreen::OnSetBackground);
 	btnSetBackground_->SetVisibility(V_GONE);
-
-	bool fileTypeSupportCRC = false;
-	if (info) {
-		switch (info->fileType) {
-		case IdentifiedFileType::PSP_PBP:
-		case IdentifiedFileType::PSP_PBP_DIRECTORY:
-		case IdentifiedFileType::PSP_ISO_NP:
-		case IdentifiedFileType::PSP_ISO:
-			fileTypeSupportCRC = true;
-			break;
-
-		default:
-			break;
-		}
-	}
 
 	isHomebrew_ = info && info->region > GAMEREGION_MAX;
 	if (fileTypeSupportCRC && !isHomebrew_ && !Reporting::HasCRC(gamePath_) ) {
@@ -360,6 +410,9 @@ ScreenRenderFlags GameScreen::render(ScreenRenderMode mode) {
 		std::string crc = StringFromFormat("%08X", crcVal);
 		tvCRC_->SetText(ReplaceAll(rp->T("FeedbackCRCValue", "Disc CRC: %1"), "%1", crc));
 		tvCRC_->SetVisibility(UI::V_VISIBLE);
+		if (tvCRCCopy_) {
+			tvCRCCopy_->SetVisibility(UI::V_VISIBLE);
+		}
 
 		// Let's check the CRC in the game database, looking up the ID and also matching the crc.
 		std::vector<GameDBInfo> dbInfos;
@@ -475,7 +528,7 @@ UI::EventReturn GameScreen::OnPlay(UI::EventParams &e) {
 UI::EventReturn GameScreen::OnGameSettings(UI::EventParams &e) {
 	std::shared_ptr<GameInfo> info = g_gameInfoCache->GetInfo(NULL, gamePath_, GameInfoFlags::PARAM_SFO);
 	if (info && info->Ready(GameInfoFlags::PARAM_SFO)) {
-		std::string discID = info->paramSFO.GetValueString("DISC_ID");
+		std::string discID = info->GetParamSFO().GetValueString("DISC_ID");
 		if ((discID.empty() || !info->disc_total) && gamePath_.FilePathContainsNoCase("PSP/GAME/"))
 			discID = g_paramSFO.GenerateFakeID(gamePath_);
 		screenManager()->push(new GameSettingsScreen(gamePath_, discID, true));
@@ -513,8 +566,11 @@ UI::EventReturn GameScreen::OnDeleteGame(UI::EventParams &e) {
 	if (info->Ready(GameInfoFlags::PARAM_SFO)) {
 		auto di = GetI18NCategory(I18NCat::DIALOG);
 		auto ga = GetI18NCategory(I18NCat::GAME);
+		std::string prompt;
+		prompt = di->T("DeleteConfirmGame", "Do you really want to delete this game\nfrom your device? You can't undo this.");
+		prompt += "\n\n" + gamePath_.ToVisualString(g_Config.memStickDirectory.c_str());
 		screenManager()->push(
-			new PromptScreen(gamePath_, di->T("DeleteConfirmGame", "Do you really want to delete this game\nfrom your device? You can't undo this."), ga->T("ConfirmDelete"), di->T("Cancel"),
+			new PromptScreen(gamePath_, prompt, ga->T("ConfirmDelete"), di->T("Cancel"),
 			std::bind(&GameScreen::CallbackDeleteGame, this, std::placeholders::_1)));
 	}
 	return UI::EVENT_DONE;

@@ -124,6 +124,7 @@ enum SystemKeyboardLayout {
 
 enum SystemProperty {
 	SYSPROP_NAME,
+	SYSPROP_SYSTEMBUILD,
 	SYSPROP_LANGREGION,
 	SYSPROP_CPUINFO,
 	SYSPROP_BOARDNAME,
@@ -146,6 +147,7 @@ enum SystemProperty {
 	SYSPROP_HAS_ACCELEROMETER,  // Used to enable/disable tilt input settings
 	SYSPROP_HAS_OPEN_DIRECTORY,
 	SYSPROP_HAS_LOGIN_DIALOG,
+	SYSPROP_HAS_TEXT_CLIPBOARD,
 	SYSPROP_HAS_TEXT_INPUT_DIALOG,  // Indicates that System_InputBoxGetString is available.
 
 	SYSPROP_CAN_CREATE_SHORTCUT,

@@ -69,6 +69,8 @@ inline bool equalsNoCase(std::string_view str, std::string_view key) {
 	return strncasecmp(str.data(), key.data(), key.size()) == 0;
 }
 
+bool containsNoCase(std::string_view haystack, std::string_view needle);
+
 void DataToHexString(const uint8_t *data, size_t size, std::string *output);
 void DataToHexString(int indent, uint32_t startAddr, const uint8_t* data, size_t size, std::string* output);
 
@@ -80,6 +82,10 @@ std::string StripQuotes(const std::string &s);
 
 std::string_view StripSpaces(std::string_view s);
 std::string_view StripQuotes(std::string_view s);
+
+std::string_view StripPrefix(std::string_view prefix, std::string_view s);
+
+int countChar(std::string_view haystack, char needle);
 
 // NOTE: str must live at least as long as all uses of output.
 void SplitString(std::string_view str, const char delim, std::vector<std::string_view> &output);
@@ -111,7 +117,6 @@ const char* safe_string(const char* s);
 
 long parseHexLong(const std::string &s);
 long parseLong(std::string s);
-std::string StringFromFormat(const char* format, ...);
 // Cheap!
 bool CharArrayFromFormatV(char* out, int outsize, const char* format, va_list args);
 

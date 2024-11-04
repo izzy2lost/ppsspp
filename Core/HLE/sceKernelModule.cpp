@@ -275,10 +275,8 @@ public:
 	const char *GetName() override { return nm.name; }
 	const char *GetTypeName() override { return GetStaticTypeName(); }
 	static const char *GetStaticTypeName() { return "Module"; }
-	void GetQuickInfo(char *ptr, int size) override
-	{
-		// ignore size
-		sprintf(ptr, "%sname=%s gp=%08x entry=%08x",
+	void GetQuickInfo(char *ptr, int size) override {
+		snprintf(ptr, size, "%sname=%s gp=%08x entry=%08x",
 			isFake ? "faked " : "",
 			nm.name,
 			nm.gp_value,
@@ -394,7 +392,7 @@ public:
 
 		// Add the symbol to the symbol map for debugging.
 		char temp[256];
-		sprintf(temp,"zz_%s", GetFuncName(func.moduleName, func.nid));
+		snprintf(temp, sizeof(temp), "zz_%s", GetFuncName(func.moduleName, func.nid));
 		g_symbolMap->AddFunction(temp,func.stubAddr,8);
 
 		// Keep track and actually hook it up if possible.
@@ -1219,8 +1217,9 @@ static void parsePrxLibInfo(const u8* ptr, u32 headerSize) {
 
 	// The lib info prefix looks like {'\', 'y', 'r', '=', '`', 'c', '`', '0'} (Big Endian)
 	const u64_le lib_info_prefix = 0x306063603D72795C;
-	auto lib_info_ptr = reinterpret_cast<const u64_le*>(ptr);
-	if (*lib_info_ptr != lib_info_prefix) {
+
+	// 'ptr' can potentially be misaligned here so let's use a memcmp instead of dereferencing 8 bytes at 'ptr'
+	if (memcmp(ptr, &lib_info_prefix, 8) != 0) {
 		// That's very wrong!
 		WARN_LOG(Log::sceModule, "~SCE module, unexpected header (not an error)");
 		return;
@@ -1236,13 +1235,14 @@ static void parsePrxLibInfo(const u8* ptr, u32 headerSize) {
 	}
 	nameBuffer[12] = '\0';
 
-	u8 versionBuffer[8] = "?.?.?.?";
+	u8 versionBuffer[7 + 1] = "?.?.?.?";
 	for (int i = 0; i < 4; ++i, ++ptr) {
 		u8 symbol = *ptr - 0x14u;
 		if (isprint(symbol)) {
 			versionBuffer[2 * i] = symbol;
 		}
 	}
+	// The null byte is already in its place, no need to assign it manually
 	
 	INFO_LOG(Log::sceModule, "~SCE module: Lib-PSP %s (SDK %s)", nameBuffer, versionBuffer);
 }
@@ -1385,8 +1385,7 @@ static PSPModule *__KernelLoadELFFromPtr(const u8 *ptr, size_t elfSize, u32 load
 	if (*magicPtr != 0x464c457f) {
 		ERROR_LOG(Log::sceModule, "Wrong magic number %08x", *magicPtr);
 		*error_string = "File corrupt";
-		if (newptr)
-			delete [] newptr;
+		delete [] newptr;
 		module->Cleanup();
 		kernelObjects.Destroy<PSPModule>(module->GetUID());
 		error = SCE_KERNEL_ERROR_UNSUPPORTED_PRX_TYPE;
@@ -1399,8 +1398,7 @@ static PSPModule *__KernelLoadELFFromPtr(const u8 *ptr, size_t elfSize, u32 load
 	int result = reader.LoadInto(loadAddress, fromTop);
 	if (result != SCE_KERNEL_ERROR_OK) {
 		ERROR_LOG(Log::sceModule, "LoadInto failed with error %08x",result);
-		if (newptr)
-			delete [] newptr;
+		delete [] newptr;
 		module->Cleanup();
 		kernelObjects.Destroy<PSPModule>(module->GetUID());
 		error = result;
@@ -1424,8 +1422,7 @@ static PSPModule *__KernelLoadELFFromPtr(const u8 *ptr, size_t elfSize, u32 load
 	if (!Memory::IsValidAddress(modinfoaddr)) {
 		*error_string = StringFromFormat("Bad module info address %08x", modinfoaddr);
 		ERROR_LOG(Log::sceModule, "Bad module info address %08x", modinfoaddr);
-		if (newptr)
-			delete[] newptr;
+		delete[] newptr;
 		module->Cleanup();
 		kernelObjects.Destroy<PSPModule>(module->GetUID());
 		error = SCE_KERNEL_ERROR_BAD_FILE;  // Probably not the right error code.
@@ -1727,8 +1724,7 @@ static PSPModule *__KernelLoadELFFromPtr(const u8 *ptr, size_t elfSize, u32 load
 		module->nm.entry_addr = -1;
 	}
 
-	if (newptr)
-		delete [] newptr;
+	delete [] newptr;
 
 	if (!reportedModule && IsHLEVersionedModule(modinfo->name)) {
 		INFO_LOG(Log::sceModule, "Loading module %s with version %04x, devkit %08x", modinfo->name, modinfo->moduleVersion, devkitVersion);
@@ -1815,9 +1811,7 @@ static PSPModule *__KernelLoadModule(u8 *fileptr, size_t fileSize, SceKernelLMOp
 		u32 error;
 		module = __KernelLoadELFFromPtr(temp ? temp : fileptr + offsets[5], elfSize, PSP_GetDefaultLoadAddress(), false, error_string, &magic, error);
 
-		if (temp) {
-			delete [] temp;
-		}
+		delete [] temp;
 	} else if (fileSize > sizeof(PSP_Header)) {
 		u32 error;
 		u32 magic = 0;
@@ -2401,10 +2395,13 @@ static u32 sceKernelUnloadModule(u32 moduleId)
 
 u32 hleKernelStopUnloadSelfModuleWithOrWithoutStatus(u32 exitCode, u32 argSize, u32 argp, u32 statusAddr, u32 optionAddr, bool WithStatus) {
 	if (loadedModules.size() > 1) {
-		if (WithStatus)
+		if (WithStatus) {
 			ERROR_LOG_REPORT(Log::sceModule, "UNIMPL sceKernelStopUnloadSelfModuleWithStatus(%08x, %08x, %08x, %08x, %08x): game may have crashed", exitCode, argSize, argp, statusAddr, optionAddr);
-		else
-			ERROR_LOG_REPORT(Log::sceModule, "UNIMPL sceKernelSelfStopUnloadModule(%08x, %08x, %08x): game may have crashed", exitCode, argSize,  argp);
+		} else {
+			// NOTE: The previous "may have crashed" message is not accurate, Splinter Cell Essentials uses this normally when leaving/entering in-game.
+			// We should not report this.
+			WARN_LOG(Log::sceModule, "sceKernelSelfStopUnloadModule(%08x, %08x, %08x)", exitCode, argSize, argp);
+		}
 		SceUID moduleID = __KernelGetCurThreadModuleId();
 		u32 priority = 0x20;
 		u32 stacksize = 0x40000;
@@ -2418,7 +2415,6 @@ u32 hleKernelStopUnloadSelfModuleWithOrWithoutStatus(u32 exitCode, u32 argSize, 
 				ERROR_LOG(Log::sceModule, "sceKernelStopUnloadSelfModuleWithStatus(%08x, %08x, %08x, %08x, %08x): invalid module id", exitCode, argSize, argp, statusAddr, optionAddr);
 			else
 				ERROR_LOG(Log::sceModule, "sceKernelSelfStopUnloadModule(%08x, %08x, %08x): invalid module id", exitCode, argSize, argp);
-			
 			return error;
 		}
 

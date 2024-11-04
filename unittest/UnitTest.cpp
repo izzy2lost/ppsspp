@@ -60,6 +60,7 @@
 #include "Common/System/System.h"
 #include "Common/Thread/ThreadUtil.h"
 #include "Common/Data/Format/IniFile.h"
+#include "Common/TimeUtil.h"
 
 #include "Common/ArmEmitter.h"
 #include "Common/BitScan.h"
@@ -107,8 +108,9 @@ void System_AudioClear() {}
 void System_AudioPushSamples(const s32 *audio, int numSamples) {}
 
 // TODO: To avoid having to define these here, these should probably be turned into system "requests".
-bool NativeSaveSecret(const char *nameOfSecret, const std::string &data) { return false; }
-std::string NativeLoadSecret(const char *nameOfSecret) {
+// To clear the secret entirely, just save an empty string.
+bool NativeSaveSecret(std::string_view nameOfSecret, std::string_view data) { return false; }
+std::string NativeLoadSecret(std::string_view nameOfSecret) {
 	return "";
 }
 
@@ -1096,6 +1098,7 @@ TestItem availableTests[] = {
 
 int main(int argc, const char *argv[]) {
 	SetCurrentThreadName("UnitTest");
+	TimeInit();
 
 	printf("CPU name: %s\n", cpu_info.cpu_string);
 	printf("ABI: %s\n", GetCompilerABI());

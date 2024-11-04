@@ -11,9 +11,8 @@ class Path;
 // Does not do synchronization, must use external mutexes.
 class Buffer {
 public:
-	Buffer();
+	Buffer() = default;
 	Buffer(Buffer &&) = default;
-	~Buffer();
 
 	static Buffer Void() {
 		Buffer buf;
@@ -74,7 +73,7 @@ public:
 	size_t size() const { return data_.size(); }
 	bool empty() const { return size() == 0; }
 	void clear() { data_.resize(0); }
-	bool IsVoid() { return void_; }
+	bool IsVoid() const { return void_; }
 
 protected:
 	// TODO: Find a better internal representation, like a cord.

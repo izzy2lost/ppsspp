@@ -255,6 +255,8 @@ bool IsActive() {
 	return GetGameID() != 0;
 }
 
+#ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
+
 static void raintegration_write_memory_handler(uint32_t address, uint8_t *buffer, uint32_t num_bytes, rc_client_t *client) {
 	// convert_retroachievements_address_to_real_address
 	uint32_t realAddress = address + PSP_MEMORY_OFFSET;
@@ -263,6 +265,8 @@ static void raintegration_write_memory_handler(uint32_t address, uint8_t *buffer
 		memcpy(writePtr, buffer, num_bytes);
 	}
 }
+
+#endif
 
 static uint32_t read_memory_callback(uint32_t address, uint8_t *buffer, uint32_t num_bytes, rc_client_t *client) {
 	// Achievements are traditionally defined relative to the base of main memory of the emulated console.
@@ -503,8 +507,19 @@ static void login_token_callback(int result, const char *error_message, rc_clien
 			auto ac = GetI18NCategory(I18NCat::ACHIEVEMENTS);
 			g_OSD.Show(OSDType::MESSAGE_WARNING, ac->T("Failed logging in to RetroAchievements"), "", g_RAImageID);
 		}
+
+		// Clear the token.
+		if (result == RC_INVALID_CREDENTIALS || result == RC_EXPIRED_TOKEN) {
+			g_Config.sAchievementsUserName.clear();
+			NativeClearSecret(RA_TOKEN_SECRET_NAME);
+			g_loginResult = RC_OK;
+		} else {
+			g_loginResult = result;
+		}
+
 		OnAchievementsLoginStateChange();
-		break;
+		g_isLoggingIn = false;
+		return;
 	}
 	}
 	g_loginResult = result;
@@ -718,7 +733,7 @@ void Logout() {
 	rc_client_logout(g_rcClient);
 	// remove from config
 	g_Config.sAchievementsUserName.clear();
-	NativeSaveSecret(RA_TOKEN_SECRET_NAME, "");
+	NativeClearSecret(RA_TOKEN_SECRET_NAME);
 	g_Config.Save("Achievements logout");
 	g_activeChallenges.clear();
 	g_loginResult = RC_OK;  // Allow trying again

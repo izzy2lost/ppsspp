@@ -43,8 +43,9 @@ private:
 	currentDir_t currentDir;
 
 	std::string startingDirectory;
-	std::recursive_mutex lock;  // must be recursive
+	std::recursive_mutex lock;  // must be recursive. TODO: fix that
 
+	// Assumes the lock is held
 	void Reset() {
 		// This used to be 6, probably an attempt to replicate PSP handles.
 		// However, that's an artifact of using psplink anyway...
@@ -126,7 +127,7 @@ public:
 	int  Ioctl(u32 handle, u32 cmd, u32 indataPtr, u32 inlen, u32 outdataPtr, u32 outlen, int &usec) override;
 	PSPDevType DevType(u32 handle) override;
 	FileSystemFlags Flags() override { return FileSystemFlags::NONE; }
-	u64  FreeSpace(const std::string &path) override;
+	u64  FreeDiskSpace(const std::string &path) override;
 
 	// Convenience helper - returns < 0 on failure.
 	int ReadEntireFile(const std::string &filename, std::vector<u8> &data, bool quiet = false);

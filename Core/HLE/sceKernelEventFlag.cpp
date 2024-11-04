@@ -58,7 +58,7 @@ public:
 	const char *GetTypeName() override { return GetStaticTypeName(); }
 	static const char *GetStaticTypeName() { return "EventFlag"; }
 	void GetQuickInfo(char *ptr, int size) override {
-		sprintf(ptr, "init=%08x cur=%08x numwait=%i",
+		snprintf(ptr, size, "init=%08x cur=%08x numwait=%i",
 			nef.initPattern,
 			nef.currentPattern,
 			nef.numWaitThreads);
@@ -184,9 +184,8 @@ static bool __KernelUnlockEventFlagForThread(EventFlag *e, EventFlagTh &th, u32 
 static bool __KernelClearEventFlagThreads(EventFlag *e, int reason) {
 	u32 error;
 	bool wokeThreads = false;
-	std::vector<EventFlagTh>::iterator iter, end;
-	for (iter = e->waitingThreads.begin(), end = e->waitingThreads.end(); iter != end; ++iter)
-		__KernelUnlockEventFlagForThread(e, *iter, error, reason, wokeThreads);
+	for (auto &event : e->waitingThreads)
+		__KernelUnlockEventFlagForThread(e, event, error, reason, wokeThreads);
 	e->waitingThreads.clear();
 
 	return wokeThreads;

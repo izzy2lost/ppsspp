@@ -46,9 +46,13 @@ android {
 		}
 	}
 
-	compileSdk 34
+	compileSdk 35
 	ndkVersion "21.4.7075529"
-
+	java {
+		toolchain {
+			languageVersion = JavaLanguageVersion.of(17)
+		}
+	}
 	defaultConfig {
 		/*
 		configurations.all {
@@ -74,7 +78,7 @@ android {
 		new File("versioncode.txt").write(androidGitVersion.code().toString())
 
 		minSdk 9
-		targetSdk 34
+		targetSdk 35
 		if (project.hasProperty("ANDROID_VERSION_CODE") && project.hasProperty("ANDROID_VERSION_NAME")) {
 			versionCode ANDROID_VERSION_CODE
 			versionName ANDROID_VERSION_NAME
@@ -117,11 +121,18 @@ android {
 					'../assets',
 			]
 		}
+		normal {
+			res.srcDirs = ['normal/res']
+		}
 		gold {
 			res.srcDirs = ['gold/res']
 		}
 		vr {
+			res.srcDirs = ['normal/res']
 			manifest.srcFile 'VRManifest.xml'
+		}
+		legacy {
+			res.srcDirs = ['legacy/res']
 		}
 	}
 	productFlavors {
@@ -161,6 +172,25 @@ android {
 				abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
 			}
 		}
+		legacy {
+			applicationId 'org.ppsspp.ppsspplegacy'
+			dimension "variant"
+			targetSdkVersion 29  // This is the point of legacy.
+			externalNativeBuild {
+				cmake {
+					// Available arguments listed at https://developer.android.com/ndk/guides/cmake.html
+					arguments '-DANDROID=true',
+						'-DANDROID_PLATFORM=android-16',
+						'-DANDROID_TOOLCHAIN=clang',
+						'-DANDROID_CPP_FEATURES=',
+						'-DANDROID_STL=c++_static',
+						'-DANDROID_LEGACY=TRUE'
+				}
+			}
+			ndk {
+				abiFilters 'armeabi-v7a', 'arm64-v8a'
+			}
+		}
 		vr {
 			applicationId 'org.ppsspp.ppssppvr'
 			dimension "variant"
@@ -174,7 +204,8 @@ android {
 							'-DANDROID_CPP_FEATURES=',
 							'-DANDROID_STL=c++_static',
 							'-DANDROID_ARM_NEON=TRUE',
-							'-DOPENXR=TRUE'
+							'-DOPENXR=TRUE',
+							'-DANDROID_LEGACY=TRUE'
 				}
 			}
 			ndk {
@@ -182,15 +213,21 @@ android {
 			}
 		}
 	}
+	// TODO: This is deprecated and needs a replacement. See https://stackoverflow.com/questions/67330818/android-gradle-plugin7-0-0-alpha15-removed-variantfilter-property-how-to-rest
+	// Though, not really that important.
 	variantFilter { variant ->
 		def needed = variant.name in [
-			'normalDebug',		// for debugging
-			'normalOptimized',	// for testing
-			'normalRelease',	// for Google Play releases
-			'goldRelease',		// for Google Play releases
-			'vrDebug',    		// for VR debugging
-			'vrOptimized',		// for VR testing
-			'vrRelease',  		// for VR releases
+			'normalDebug',      // for debugging
+			'normalOptimized',  // for testing/user build
+			'normalRelease',    // for Google Play releases
+			'goldDebug',
+			'goldRelease',      // for Google Play releases
+			'vrDebug',          // for VR debugging
+			'vrOptimized',      // for VR testing
+			'vrRelease',        // for VR releases
+			'legacyDebug',      // for legacy debugging
+			'legacyOptimized',  // for legacy testing/user build
+			'legacyRelease',    // for buildbot releases
 		]
 		variant.setIgnore(!needed)
 	}

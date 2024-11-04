@@ -9,6 +9,7 @@ public:
 	GPUCommonHW(GraphicsContext *gfxCtx, Draw::DrawContext *draw);
 	~GPUCommonHW();
 
+	// This can fail, and if so no render pass is active.
 	void CopyDisplayToOutput(bool reallyDirty) override;
 	void DoState(PointerWrap &p) override;
 	void DeviceLost() override;
@@ -67,6 +68,8 @@ public:
 
 	void FastRunLoop(DisplayList &list) override;
 	void ExecuteOp(u32 op, u32 diff) override;
+
+	bool PresentedThisFrame() const override;
 
 private:
 	void CheckDepthUsage(VirtualFramebuffer *vfb) override;

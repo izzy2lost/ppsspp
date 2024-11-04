@@ -150,6 +150,10 @@ public:
 
 	const char *tag() const override { return "TextEditPopup"; }
 
+	void SetPasswordMasking(bool masking) {
+		passwordMasking_ = masking;
+	}
+
 	Event OnChange;
 
 private:
@@ -159,6 +163,7 @@ private:
 	std::string textEditValue_;
 	std::string placeholder_;
 	int maxLen_;
+	bool passwordMasking_ = false;
 };
 
 struct ContextMenuItem {
@@ -233,7 +238,7 @@ private:
 	UI::EventReturn HandleClick(UI::EventParams &e);
 
 	void ChoiceCallback(int num);
-	virtual void PostChoiceCallback(int num) {}
+	virtual bool PostChoiceCallback(int num) { return true; }
 
 	I18NCat category_;
 	ScreenManager *screenManager_;
@@ -269,9 +274,15 @@ public:
 	}
 
 protected:
-	void PostChoiceCallback(int num) override {
-		if (valueStr_) {
+	bool PostChoiceCallback(int num) override {
+		if (!valueStr_) {
+			return true;
+		}
+		if (*valueStr_ != choices_[num]) {
 			*valueStr_ = choices_[num];
+			return true;
+		} else {
+			return false;
 		}
 	}
 
@@ -422,7 +433,6 @@ public:
 
 private:
 	std::string *value_;
-	BrowseFileType fileType_;
 	RequesterToken token_;
 };
 

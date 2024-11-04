@@ -145,7 +145,7 @@ public:
 
 	std::string sIgnoreCompatSettings;
 
-	bool bDiscordPresence;  // Enables setting the Discord presence to the current game (or menu)
+	bool bDiscordRichPresence;  // Enables setting the Discord presence to the current game (or menu)
 
 	// GFX
 	int iGPUBackend;
@@ -280,7 +280,7 @@ public:
 	bool bExtraAudioBuffering;  // For bluetooth
 	std::string sAudioDevice;
 	bool bAutoAudioDevice;
-	bool bUseNewAtrac;
+	bool bUseExperimentalAtrac;
 
 	// iOS only for now
 	bool bAudioMixWithOthers;
@@ -481,23 +481,20 @@ public:
 	bool bEnableVR;
 	bool bEnable6DoF;
 	bool bEnableStereo;
-	bool bEnableMotions;
+	bool bEnableImmersiveVR;
 	bool bForce72Hz;
+	bool bForceVR;
 	bool bManualForceVR;
 	bool bPassthrough;
 	bool bRescaleHUD;
 	float fCameraDistance;
 	float fCameraHeight;
 	float fCameraSide;
+	float fCameraPitch;
 	float fCanvasDistance;
 	float fCanvas3DDistance;
 	float fFieldOfViewPercentage;
 	float fHeadUpDisplayScale;
-	float fMotionLength;
-	float fHeadRotationScale;
-	bool bHeadRotationEnabled;
-	bool bHeadRotationSmoothing;
-	int iCameraPitch;
 
 	// Debugger
 	int iDisasmWindowX;

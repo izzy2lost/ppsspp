@@ -80,7 +80,7 @@ bool GenericLogEnabled(LogLevel level, Log type) {
 	return false;
 }
 
-LogManager *LogManager::logManager_ = NULL;
+LogManager *LogManager::logManager_ = nullptr;
 
 // NOTE: Needs to be kept in sync with the Log enum.
 static const char * const g_logTypeNames[] = {
@@ -189,8 +189,7 @@ LogManager::~LogManager() {
 	// Make sure we don't shutdown while logging.  RemoveListener locks too, but there are gaps.
 	std::lock_guard<std::mutex> listeners_lock(listeners_lock_);
 
-	if (fileLog_)
-		delete fileLog_;
+	delete fileLog_;
 #if !defined(MOBILE_DEVICE) || defined(_DEBUG)
 #if PPSSPP_PLATFORM(WINDOWS) && !PPSSPP_PLATFORM(UWP)
 	delete consoleLog_;
@@ -216,8 +215,8 @@ void LogManager::ChangeFileLog(const char *filename) {
 
 void LogManager::SaveConfig(Section *section) {
 	for (int i = 0; i < (int)Log::NUMBER_OF_LOGS; i++) {
-		section->Set((std::string(log_[i].m_shortName) + "Enabled").c_str(), log_[i].enabled);
-		section->Set((std::string(log_[i].m_shortName) + "Level").c_str(), (int)log_[i].level);
+		section->Set((std::string(log_[i].m_shortName) + "Enabled"), log_[i].enabled);
+		section->Set((std::string(log_[i].m_shortName) + "Level"), (int)log_[i].level);
 	}
 }
 
@@ -225,8 +224,8 @@ void LogManager::LoadConfig(const Section *section, bool debugDefaults) {
 	for (int i = 0; i < (int)Log::NUMBER_OF_LOGS; i++) {
 		bool enabled = false;
 		int level = 0;
-		section->Get((std::string(log_[i].m_shortName) + "Enabled").c_str(), &enabled, true);
-		section->Get((std::string(log_[i].m_shortName) + "Level").c_str(), &level, (int)(debugDefaults ? LogLevel::LDEBUG : LogLevel::LERROR));
+		section->Get((std::string(log_[i].m_shortName) + "Enabled"), &enabled, true);
+		section->Get((std::string(log_[i].m_shortName) + "Level"), &level, (int)(debugDefaults ? LogLevel::LDEBUG : LogLevel::LERROR));
 		log_[i].enabled = enabled;
 		log_[i].level = (LogLevel)level;
 	}
@@ -247,7 +246,7 @@ void LogManager::LogLine(LogLevel level, Log type, const char *file, int line, c
 	static const char sep = '/';
 #endif
 	const char *fileshort = strrchr(file, sep);
-	if (fileshort != NULL) {
+	if (fileshort) {
 		do
 			--fileshort;
 		while (fileshort > file && *fileshort != sep);
@@ -303,7 +302,7 @@ void LogManager::Init(bool *enabledSetting) {
 
 void LogManager::Shutdown() {
 	delete logManager_;
-	logManager_ = NULL;
+	logManager_ = nullptr;
 }
 
 void LogManager::AddListener(LogListener *listener) {
@@ -364,7 +363,7 @@ void RingbufferLogListener::Log(const LogMessage &message) {
 #ifdef _WIN32
 
 void OutputDebugStringUTF8(const char *p) {
-	wchar_t temp[16384*4];
+	wchar_t *temp = new wchar_t[65536];
 
 	int len = std::min(16383*4, (int)strlen(p));
 	int size = (int)MultiByteToWideChar(CP_UTF8, 0, p, len, NULL, 0);
@@ -372,6 +371,7 @@ void OutputDebugStringUTF8(const char *p) {
 	temp[size] = 0;
 
 	OutputDebugString(temp);
+	delete[] temp;
 }
 
 #else

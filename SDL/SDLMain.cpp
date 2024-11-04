@@ -100,6 +100,10 @@ static bool g_rebootEmuThread = false;
 
 static SDL_AudioSpec g_retFmt;
 
+static bool g_textFocusChanged;
+static bool g_textFocus;
+
+
 // Window state to be transferred to the main SDL thread.
 static std::mutex g_mutexWindow;
 struct WindowState {
@@ -234,7 +238,8 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 		g_QuitRequested = true;
 		return true;
 #if PPSSPP_PLATFORM(SWITCH)
-	case SystemRequestType::INPUT_TEXT_MODAL: {
+	case SystemRequestType::INPUT_TEXT_MODAL:
+	{
 		// swkbd only works on "real" titles
 		if (__nx_applet_type != AppletType_Application && __nx_applet_type != AppletType_SystemApplication) {
 			g_requestManager.PostSystemFailure(requestId);
@@ -344,6 +349,23 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 			exit(1);
 		}
 #endif /* PPSSPP_PLATFORM(WINDOWS) */
+		return true;
+	}
+	case SystemRequestType::NOTIFY_UI_EVENT:
+	{
+		switch ((UIEventNotification)param3) {
+		case UIEventNotification::TEXT_GOTFOCUS:
+			g_textFocus = true;
+			g_textFocusChanged = true;
+			break;
+		case UIEventNotification::POPUP_CLOSED:
+		case UIEventNotification::TEXT_LOSTFOCUS:
+			g_textFocus = false;
+			g_textFocusChanged = true;
+			break;
+		default:
+			break;
+		}
 		return true;
 	}
 	default:
@@ -543,6 +565,7 @@ float System_GetPropertyFloat(SystemProperty prop) {
 
 bool System_GetPropertyBool(SystemProperty prop) {
 	switch (prop) {
+	case SYSPROP_HAS_TEXT_CLIPBOARD:
 	case SYSPROP_CAN_SHOW_FILE:
 #if PPSSPP_PLATFORM(WINDOWS) || PPSSPP_PLATFORM(MAC) || (PPSSPP_PLATFORM(LINUX) && !PPSSPP_PLATFORM(ANDROID))
 		return true;
@@ -1085,6 +1108,18 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 	}
 }
 
+void UpdateTextFocus() {
+	if (g_textFocusChanged) {
+		INFO_LOG(Log::System, "Updating text focus: %d", g_textFocus);
+		if (g_textFocus) {
+			SDL_StartTextInput();
+		} else {
+			SDL_StopTextInput();
+		}
+		g_textFocusChanged = false;
+	}
+}
+
 void UpdateSDLCursor() {
 #if !defined(MOBILE_DEVICE)
 	if (lastUIState != GetUIState()) {
@@ -1107,6 +1142,8 @@ int main(int argc, char *argv[]) {
 			return 0;
 		}
 	}
+
+	TimeInit();
 
 #ifdef HAVE_LIBNX
 	socketInitializeDefault();
@@ -1131,8 +1168,10 @@ int main(int argc, char *argv[]) {
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 #endif
 
+	bool vulkanMayBeAvailable = false;
 	if (VulkanMayBeAvailable()) {
 		printf("DEBUG: Vulkan might be available.\n");
+		vulkanMayBeAvailable = true;
 	} else {
 		printf("DEBUG: Vulkan is not available, not using Vulkan.\n");
 	}
@@ -1324,26 +1363,51 @@ int main(int argc, char *argv[]) {
 	GraphicsContext *graphicsContext = nullptr;
 	SDL_Window *window = nullptr;
 
+	// Switch away from Vulkan if not available.
+	if (g_Config.iGPUBackend == (int)GPUBackend::VULKAN && !vulkanMayBeAvailable) {
+		g_Config.iGPUBackend = (int)GPUBackend::OPENGL;
+	}
+
 	std::string error_message;
 	if (g_Config.iGPUBackend == (int)GPUBackend::OPENGL) {
-		SDLGLGraphicsContext *ctx = new SDLGLGraphicsContext();
-		if (ctx->Init(window, x, y, w, h, mode, &error_message) != 0) {
-			printf("GL init error '%s'\n", error_message.c_str());
+		SDLGLGraphicsContext *glctx = new SDLGLGraphicsContext();
+		if (glctx->Init(window, x, y, w, h, mode, &error_message) != 0) {
+			// Let's try the fallback once per process run.
+			printf("GL init error '%s' - falling back to Vulkan\n", error_message.c_str());
+			g_Config.iGPUBackend = (int)GPUBackend::VULKAN;
+			SetGPUBackend((GPUBackend)g_Config.iGPUBackend);
+			delete glctx;
+
+			// NOTE : This should match the lines below in the Vulkan case.
+			SDLVulkanGraphicsContext *vkctx = new SDLVulkanGraphicsContext();
+			if (!vkctx->Init(window, x, y, w, h, mode | SDL_WINDOW_VULKAN, &error_message)) {
+				printf("Vulkan fallback failed: %s\n", error_message.c_str());
+				return 1;
+			}
+			graphicsContext = vkctx;
+		} else {
+			graphicsContext = glctx;
 		}
-		graphicsContext = ctx;
 #if !PPSSPP_PLATFORM(SWITCH)
 	} else if (g_Config.iGPUBackend == (int)GPUBackend::VULKAN) {
-		SDLVulkanGraphicsContext *ctx = new SDLVulkanGraphicsContext();
-		if (!ctx->Init(window, x, y, w, h, mode | SDL_WINDOW_VULKAN, &error_message)) {
+		SDLVulkanGraphicsContext *vkctx = new SDLVulkanGraphicsContext();
+		if (!vkctx->Init(window, x, y, w, h, mode | SDL_WINDOW_VULKAN, &error_message)) {
+			// Let's try the fallback once per process run.
+
 			printf("Vulkan init error '%s' - falling back to GL\n", error_message.c_str());
 			g_Config.iGPUBackend = (int)GPUBackend::OPENGL;
 			SetGPUBackend((GPUBackend)g_Config.iGPUBackend);
-			delete ctx;
+			delete vkctx;
+
+			// NOTE : This should match the three lines above in the OpenGL case.
 			SDLGLGraphicsContext *glctx = new SDLGLGraphicsContext();
-			glctx->Init(window, x, y, w, h, mode, &error_message);
+			if (glctx->Init(window, x, y, w, h, mode, &error_message) != 0) {
+				printf("GL fallback failed: %s\n", error_message.c_str());
+				return 1;
+			}
 			graphicsContext = glctx;
 		} else {
-			graphicsContext = ctx;
+			graphicsContext = vkctx;
 		}
 #endif
 	}
@@ -1386,14 +1450,20 @@ int main(int argc, char *argv[]) {
 	// Since we render from the main thread, there's nothing done here, but we call it to avoid confusion.
 	if (!graphicsContext->InitFromRenderThread(&error_message)) {
 		printf("Init from thread error: '%s'\n", error_message.c_str());
+		return 1;
 	}
+
+	// OK, we have a valid graphics backend selected. Let's clear the failures.
+	g_Config.sFailedGPUBackends.clear();
 
 #ifdef MOBILE_DEVICE
 	SDL_ShowCursor(SDL_DISABLE);
 #endif
 
-	// Ensure that the swap interval is set after context creation (needed for kmsdrm)
-	SDL_GL_SetSwapInterval(1);
+	// Avoid the IME popup when holding keys. This doesn't affect all versions of SDL.
+	// Note: We re-enable it in text input fields! This is necessary otherwise we don't receive
+	// KEY_CHAR events.
+	SDL_StopTextInput();
 
 	InitSDLAudioDevice();
 
@@ -1429,6 +1499,7 @@ int main(int argc, char *argv[]) {
 			if (g_QuitRequested || g_RestartRequested)
 				break;
 
+			UpdateTextFocus();
 			UpdateSDLCursor();
 
 			inputTracker.MouseCaptureControl();
@@ -1455,6 +1526,7 @@ int main(int argc, char *argv[]) {
 		if (g_QuitRequested || g_RestartRequested)
 			break;
 
+		UpdateTextFocus();
 		UpdateSDLCursor();
 
 		inputTracker.MouseCaptureControl();

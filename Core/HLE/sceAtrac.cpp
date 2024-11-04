@@ -138,7 +138,7 @@ void __AtracDoState(PointerWrap &p) {
 }
 
 static AtracBase *allocAtrac(bool forceOld = false) {
-	if (g_Config.bUseNewAtrac && !forceOld) {
+	if (g_Config.bUseExperimentalAtrac && !forceOld) {
 		return new Atrac2();
 	} else {
 		return new Atrac();
@@ -528,7 +528,11 @@ static u32 sceAtracGetStreamDataInfo(int atracID, u32 writePtrAddr, u32 writable
 static u32 sceAtracReleaseAtracID(int atracID) {
 	int result = deleteAtrac(atracID);
 	if (result < 0) {
-		return hleLogError(Log::ME, result, "did not exist");
+		if (atracID >= 0) {
+			return hleLogError(Log::ME, result, "did not exist");
+		} else {
+			return hleLogWarning(Log::ME, result, "did not exist");
+		}
 	}
 	return hleLogSuccessInfoI(Log::ME, result);
 }
@@ -677,7 +681,12 @@ static u32 sceAtracSetLoopNum(int atracID, int loopNum) {
 		return err;
 	}
 	if (atrac->GetTrack().loopinfo.size() == 0) {
-		return hleLogError(Log::ME, ATRAC_ERROR_NO_LOOP_INFORMATION, "no loop information");
+		if (loopNum == -1) {
+			// This is very common and not really a problem.
+			return hleLogDebug(Log::ME, ATRAC_ERROR_NO_LOOP_INFORMATION, "no loop information to write to!");
+		} else {
+			return hleLogError(Log::ME, ATRAC_ERROR_NO_LOOP_INFORMATION, "no loop information to write to!");
+		}
 	}
 
 	atrac->SetLoopNum(loopNum);

@@ -72,13 +72,16 @@ void Event::Add(std::function<EventReturn(EventParams&)> func) {
 
 // Call this from input thread or whatever, it doesn't matter
 void Event::Trigger(EventParams &e) {
+	if (handlers_.empty()) {
+		return;
+	}
 	EventTriggered(this, e);
 }
 
 // Call this from UI thread
 EventReturn Event::Dispatch(EventParams &e) {
-	for (auto iter = handlers_.begin(); iter != handlers_.end(); ++iter) {
-		if ((iter->func)(e) == UI::EVENT_DONE) {
+	for (auto &handler : handlers_) {
+		if ((handler.func)(e) == UI::EVENT_DONE) {
 			// Event is handled, stop looping immediately. This event might even have gotten deleted.
 			return UI::EVENT_DONE;
 		}
@@ -602,8 +605,10 @@ ItemHeader::ItemHeader(std::string_view text, LayoutParams *layoutParams)
 
 void ItemHeader::Draw(UIContext &dc) {
 	dc.SetFontStyle(large_ ? dc.theme->uiFont : dc.theme->uiFontSmall);
-	dc.DrawText(text_, bounds_.x + 4, bounds_.centerY(), dc.theme->headerStyle.fgColor, ALIGN_LEFT | ALIGN_VCENTER);
-	dc.Draw()->DrawImageCenterTexel(dc.theme->whiteImage, bounds_.x, bounds_.y2()-2, bounds_.x2(), bounds_.y2(), dc.theme->headerStyle.fgColor);
+
+	const UI::Style &style = popupStyle_ ? dc.theme->popupStyle : dc.theme->headerStyle;
+	dc.DrawText(text_, bounds_.x + 4, bounds_.centerY(), style.fgColor, ALIGN_LEFT | ALIGN_VCENTER);
+	dc.Draw()->DrawImageCenterTexel(dc.theme->whiteImage, bounds_.x, bounds_.y2()-2, bounds_.x2(), bounds_.y2(), style.fgColor);
 }
 
 void ItemHeader::GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const {
@@ -641,10 +646,10 @@ void CollapsibleHeader::Draw(UIContext &dc) {
 	float xoff = 37.0f;
 
 	dc.SetFontStyle(dc.theme->uiFontSmall);
-	dc.DrawText(text_, bounds_.x + 4 + xoff, bounds_.centerY(), dc.theme->headerStyle.fgColor, ALIGN_LEFT | ALIGN_VCENTER);
-	dc.Draw()->DrawImageCenterTexel(dc.theme->whiteImage, bounds_.x, bounds_.y2() - 2, bounds_.x2(), bounds_.y2(), dc.theme->headerStyle.fgColor);
+	dc.DrawText(text_, bounds_.x + 4 + xoff, bounds_.centerY(), style.fgColor, ALIGN_LEFT | ALIGN_VCENTER);
+	dc.Draw()->DrawImageCenterTexel(dc.theme->whiteImage, bounds_.x, bounds_.y2() - 2, bounds_.x2(), bounds_.y2(), style.fgColor);
 	if (hasSubItems_) {
-		dc.Draw()->DrawImageRotated(ImageID("I_ARROW"), bounds_.x + 20.0f, bounds_.y + 20.0f, 1.0f, *toggle_ ? -M_PI / 2 : M_PI);
+		dc.Draw()->DrawImageRotated(ImageID("I_ARROW"), bounds_.x + 20.0f, bounds_.y + 20.0f, 1.0f, *toggle_ ? -M_PI / 2 : M_PI, style.fgColor);
 	}
 }
 
@@ -1043,7 +1048,13 @@ void TextView::GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz
 	if (bullet_) {
 		bounds.w -= bulletOffset;
 	}
-	dc.MeasureTextRect(small_ ? dc.theme->uiFontSmall : dc.theme->uiFont, 1.0f, 1.0f, text_, bounds, &w, &h, textAlign_);
+	const FontStyle *style = &dc.theme->uiFont;
+	if (small_) {
+		style = &dc.theme->uiFontSmall;
+	} else if (big_) {
+		style = &dc.theme->uiFontBig;
+	}
+	dc.MeasureTextRect(*style, 1.0f, 1.0f, text_, bounds, &w, &h, textAlign_);
 	w += pad_ * 2.0f;
 	h += pad_ * 2.0f;
 	if (bullet_) {
@@ -1074,7 +1085,13 @@ void TextView::Draw(UIContext &dc) {
 		style.background.color &= 0x7fffffff;
 		dc.FillRect(style.background, bounds_);
 	}
-	dc.SetFontStyle(small_ ? dc.theme->uiFontSmall : dc.theme->uiFont);
+	const FontStyle *style = &dc.theme->uiFont;
+	if (small_) {
+		style = &dc.theme->uiFontSmall;
+	} else if (big_) {
+		style = &dc.theme->uiFontBig;
+	}
+	dc.SetFontStyle(*style);
 
 	Bounds textBounds = bounds_;
 
@@ -1094,7 +1111,7 @@ void TextView::Draw(UIContext &dc) {
 		dc.DrawTextRect(text_, textBounds.Offset(1.0f + pad_, 1.0f + pad_), shadowColor, textAlign_);
 	}
 	dc.DrawTextRect(text_, textBounds.Offset(pad_, pad_), textColor, textAlign_);
-	if (small_) {
+	if (small_ || big_) {
 		// If we changed font style, reset it.
 		dc.SetFontStyle(dc.theme->uiFont);
 	}
@@ -1130,18 +1147,25 @@ void TextEdit::Draw(UIContext &dc) {
 	Bounds textBounds = bounds_;
 	textBounds.x = textX - scrollPos_;
 
+	std::string textToDisplay = text_;
+	if (passwordMasking_) {
+		for (int i = 0; i < textToDisplay.size(); i++) {
+			textToDisplay[i] = '*';
+		}
+	}
+
 	if (text_.empty()) {
 		if (placeholderText_.size()) {
 			uint32_t c = textColor & 0x50FFFFFF;
 			dc.DrawTextRect(placeholderText_, bounds_, c, ALIGN_CENTER);
 		}
 	} else {
-		dc.DrawTextRect(text_, textBounds, textColor, ALIGN_VCENTER | ALIGN_LEFT | align_);
+		dc.DrawTextRect(textToDisplay, textBounds, textColor, ALIGN_VCENTER | ALIGN_LEFT | align_);
 	}
 
 	if (HasFocus()) {
 		// Hack to find the caret position. Might want to find a better way...
-		dc.MeasureText(dc.theme->uiFont, 1.0f, 1.0f, text_.substr(0, caret_), &w, &h, ALIGN_VCENTER | ALIGN_LEFT | align_);
+		dc.MeasureText(dc.theme->uiFont, 1.0f, 1.0f, textToDisplay.substr(0, caret_), &w, &h, ALIGN_VCENTER | ALIGN_LEFT | align_);
 		float caretX = w - scrollPos_;
 		if (caretX > bounds_.w) {
 			scrollPos_ += caretX - bounds_.w;
@@ -1310,7 +1334,7 @@ bool TextEdit::Key(const KeyInput &input) {
 
 	// Process chars.
 	if (input.flags & KEY_CHAR) {
-		int unichar = input.keyCode;
+		const int unichar = input.keyCode;
 		if (unichar >= 0x20 && !ctrlDown_) {  // Ignore control characters.
 			// Insert it! (todo: do it with a string insert)
 			char buf[8];

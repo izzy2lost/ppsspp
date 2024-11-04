@@ -45,7 +45,6 @@ MIPSDebugInterface *currentDebugMIPS = &debugr4k;
 u8 voffset[128];
 u8 fromvoffset[128];
 
-
 #ifndef M_LOG2E
 #define M_E        2.71828182845904523536f
 #define M_LOG2E    1.44269504088896340736f
@@ -88,7 +87,6 @@ const float cst_constants[32] = {
 	logf(10.0f)/logf(2.0f),
 	sqrtf(3.0f)/2.0f,
 };
-
 
 MIPSState::MIPSState() {
 	MIPSComp::jit = nullptr;
@@ -160,7 +158,6 @@ MIPSState::MIPSState() {
 }
 
 MIPSState::~MIPSState() {
-	Shutdown();
 }
 
 void MIPSState::Shutdown() {
@@ -209,6 +206,8 @@ void MIPSState::Init() {
 	llBit = 0;
 	nextPC = 0;
 	downcount = 0;
+
+	memset(vcmpResult, 0, sizeof(vcmpResult));
 
 	std::lock_guard<std::recursive_mutex> guard(MIPSComp::jitLock);
 	if (PSP_CoreParameter().cpuCore == CPUCore::JIT || PSP_CoreParameter().cpuCore == CPUCore::JIT_IR) {

@@ -89,6 +89,7 @@ void FramebufferManagerCommon::Init(int msaaLevel) {
 	NotifyRenderResized(msaaLevel);
 }
 
+// Returns true if we need to stop the render thread
 bool FramebufferManagerCommon::UpdateRenderSize(int msaaLevel) {
 	const bool newRender = renderWidth_ != (float)PSP_CoreParameter().renderWidth || renderHeight_ != (float)PSP_CoreParameter().renderHeight || msaaLevel_ != msaaLevel;
 
@@ -111,6 +112,11 @@ bool FramebufferManagerCommon::UpdateRenderSize(int msaaLevel) {
 	useBufferedRendering_ = newBuffered;
 
 	presentation_->UpdateRenderSize(renderWidth_, renderHeight_);
+
+	// If just switching TO buffered rendering, no need to pause the threads. In fact this causes problems due to the open backbuffer renderpass.
+	if (!useBufferedRendering_ && newBuffered) {
+		return false;
+	}
 	return newRender || newSettings;
 }
 
@@ -874,6 +880,7 @@ void FramebufferManagerCommon::CopyToColorFromOverlappingFramebuffers(VirtualFra
 		if (source.channel == RASTER_COLOR) {
 			Draw2DPipeline *pipeline = nullptr;
 			const char *pass_name = "N/A";
+			float scaleFactorX = 1.0f;
 			if (src->fb_format == dst->fb_format) {
 				gpuStats.numColorCopies++;
 				pipeline = Get2DPipeline(DRAW2D_COPY_COLOR);
@@ -888,7 +895,6 @@ void FramebufferManagerCommon::CopyToColorFromOverlappingFramebuffers(VirtualFra
 					src->fb_address, GeBufferFormatToString(src->fb_format),
 					dst->fb_address, GeBufferFormatToString(dst->fb_format));
 
-				float scaleFactorX = 1.0f;
 				pipeline = GetReinterpretPipeline(src->fb_format, dst->fb_format, &scaleFactorX);
 				dstX1 *= scaleFactorX;
 				dstX2 *= scaleFactorX;
@@ -903,6 +909,11 @@ void FramebufferManagerCommon::CopyToColorFromOverlappingFramebuffers(VirtualFra
 				// OK we have the pipeline, now just do the blit.
 				BlitUsingRaster(src->fbo, 0.0f, 0.0f, srcWidth, srcHeight,
 					dst->fbo, dstX1, dstY1, dstX2, dstY2, false, dst->renderScaleFactor, pipeline, pass_name);
+			}
+
+			if (scaleFactorX == 1.0f && dst->z_address == src->z_address && dst->z_stride == src->z_stride) {
+				// We should also copy the depth buffer in this case!
+				BlitFramebufferDepth(src, dst, true);
 			}
 		}
 	}
@@ -966,7 +977,7 @@ void FramebufferManagerCommon::DestroyFramebuf(VirtualFramebuffer *v) {
 	delete v;
 }
 
-void FramebufferManagerCommon::BlitFramebufferDepth(VirtualFramebuffer *src, VirtualFramebuffer *dst) {
+void FramebufferManagerCommon::BlitFramebufferDepth(VirtualFramebuffer *src, VirtualFramebuffer *dst, bool allowSizeMismatch) {
 	_dbg_assert_(src && dst);
 
 	_dbg_assert_(src != dst);
@@ -974,7 +985,7 @@ void FramebufferManagerCommon::BlitFramebufferDepth(VirtualFramebuffer *src, Vir
 	// Check that the depth address is even the same before actually blitting.
 	bool matchingDepthBuffer = src->z_address == dst->z_address && src->z_stride != 0 && dst->z_stride != 0;
 	bool matchingSize = (src->width == dst->width || (src->width == 512 && dst->width == 480) || (src->width == 480 && dst->width == 512)) && src->height == dst->height;
-	if (!matchingDepthBuffer || !matchingSize) {
+	if (!matchingDepthBuffer || (!matchingSize && !allowSizeMismatch)) {
 		return;
 	}
 
@@ -1512,7 +1523,7 @@ Draw::Texture *FramebufferManagerCommon::MakePixelTexture(const u8 *srcPixels, G
 	return tex;
 }
 
-void FramebufferManagerCommon::DrawFramebufferToOutput(const u8 *srcPixels, int srcStride, GEBufferFormat srcPixelFormat) {
+bool FramebufferManagerCommon::DrawFramebufferToOutput(const u8 *srcPixels, int srcStride, GEBufferFormat srcPixelFormat) {
 	textureCache_->ForgetLastTexture();
 	shaderManager_->DirtyLastShader();
 
@@ -1520,7 +1531,7 @@ void FramebufferManagerCommon::DrawFramebufferToOutput(const u8 *srcPixels, int 
 	float v0 = 0.0f, v1 = 1.0f;
 	Draw::Texture *pixelsTex = MakePixelTexture(srcPixels, srcPixelFormat, srcStride, 512, 272);
 	if (!pixelsTex)
-		return;
+		return false;
 
 	int uvRotation = useBufferedRendering_ ? g_Config.iInternalScreenRotation : ROTATION_LOCKED_HORIZONTAL;
 	OutputFlags flags = g_Config.iDisplayFilter == SCALE_LINEAR ? OutputFlags::LINEAR : OutputFlags::NEAREST;
@@ -1541,6 +1552,8 @@ void FramebufferManagerCommon::DrawFramebufferToOutput(const u8 *srcPixels, int 
 
 	DiscardFramebufferCopy();
 	currentRenderVfb_ = nullptr;
+
+	return true;
 }
 
 void FramebufferManagerCommon::SetViewport2D(int x, int y, int w, int h) {
@@ -1562,9 +1575,9 @@ void FramebufferManagerCommon::CopyDisplayToOutput(bool reallyDirty) {
 		// No framebuffer to display! Clear to black.
 		if (useBufferedRendering_) {
 			draw_->BindFramebufferAsRenderTarget(nullptr, { Draw::RPAction::CLEAR, Draw::RPAction::CLEAR, Draw::RPAction::CLEAR }, "CopyDisplayToOutput");
-			presentation_->NotifyPresent();
 		}
 		gstate_c.Dirty(DIRTY_VIEWPORTSCISSOR_STATE);
+		presentation_->NotifyPresent();
 		return;
 	}
 
@@ -1622,7 +1635,14 @@ void FramebufferManagerCommon::CopyDisplayToOutput(bool reallyDirty) {
 	if (!vfb) {
 		if (Memory::IsValidAddress(fbaddr)) {
 			// The game is displaying something directly from RAM. In GTA, it's decoded video.
-			DrawFramebufferToOutput(Memory::GetPointerUnchecked(fbaddr), displayStride_, displayFormat_);
+			// If successful, this effectively calls presentation_->NotifyPresent();
+			if (!DrawFramebufferToOutput(Memory::GetPointerUnchecked(fbaddr), displayStride_, displayFormat_)) {
+				if (useBufferedRendering_) {
+					// Bind and clear the backbuffer. This should be the first time during the frame that it's bound.
+					draw_->BindFramebufferAsRenderTarget(nullptr, { Draw::RPAction::CLEAR, Draw::RPAction::CLEAR, Draw::RPAction::CLEAR }, "CopyDisplayToOutput_DrawError");
+				}
+				presentation_->NotifyPresent();
+			}
 			return;
 		} else {
 			DEBUG_LOG(Log::FrameBuf, "Found no FBO to display! displayFBPtr = %08x", fbaddr);
@@ -1630,8 +1650,9 @@ void FramebufferManagerCommon::CopyDisplayToOutput(bool reallyDirty) {
 			if (useBufferedRendering_) {
 				// Bind and clear the backbuffer. This should be the first time during the frame that it's bound.
 				draw_->BindFramebufferAsRenderTarget(nullptr, { Draw::RPAction::CLEAR, Draw::RPAction::CLEAR, Draw::RPAction::CLEAR }, "CopyDisplayToOutput_NoFBO");
-			}
+			} // For non-buffered rendering, every frame is cleared anyway.
 			gstate_c.Dirty(DIRTY_VIEWPORTSCISSOR_STATE);
+			presentation_->NotifyPresent();
 			return;
 		}
 	}
@@ -1664,13 +1685,13 @@ void FramebufferManagerCommon::CopyDisplayToOutput(bool reallyDirty) {
 
 		//clip the VR framebuffer to keep the aspect ratio
 		if (IsVREnabled() && !IsFlatVRGame() && !IsGameVRScene()) {
-			float aspect = 272.0f / 480.0f;
+			float aspect = 272.0f / 480.0f * (IsImmersiveVRMode() ? 2.0f : 1.0f);
 			float clipY = 272.0f * (1.0f - aspect) / 2.0f;
 			v0 = (clipY + offsetY) / (float)vfb->bufferHeight;
 			v1 = (272.0f - clipY + offsetY) / (float)vfb->bufferHeight;
 
 			//zoom inside
-			float zoom = 0.1f;
+			float zoom = IsImmersiveVRMode() ? 0.4f : 0.1f;
 			u0 += zoom / aspect;
 			u1 -= zoom / aspect;
 			v0 += zoom;
@@ -1695,7 +1716,9 @@ void FramebufferManagerCommon::CopyDisplayToOutput(bool reallyDirty) {
 		presentation_->SourceFramebuffer(vfb->fbo, actualWidth, actualHeight);
 		presentation_->CopyToOutput(flags, uvRotation, u0, v0, u1, v1);
 	} else if (useBufferedRendering_) {
-		WARN_LOG(Log::FrameBuf, "Current VFB lacks an FBO: %08x", vfb->fb_address);
+		WARN_LOG(Log::FrameBuf, "Using buffered rendering, and current VFB lacks an FBO: %08x", vfb->fb_address);
+	} else {
+		presentation_->NotifyPresent();
 	}
 
 	// This may get called mid-draw if the game uses an immediate flip.
@@ -1888,8 +1911,8 @@ void FramebufferManagerCommon::ResizeFramebufFBO(VirtualFramebuffer *vfb, int w,
 
 struct CopyCandidate {
 	VirtualFramebuffer *vfb = nullptr;
-	int y;
-	int h;
+	int y = 0;
+	int h = 0;
 
 	std::string ToString(RasterChannel channel) const {
 		return StringFromFormat("%08x %s %dx%d y=%d h=%d", vfb->Address(channel), GeBufferFormatToString(vfb->Format(channel)), vfb->width, vfb->height, y, h);
@@ -3177,48 +3200,50 @@ bool FramebufferManagerCommon::ReadbackStencilbuffer(Draw::Framebuffer *fbo, int
 }
 
 void FramebufferManagerCommon::ReadFramebufferToMemory(VirtualFramebuffer *vfb, int x, int y, int w, int h, RasterChannel channel, Draw::ReadbackMode mode) {
+	if (!vfb || !vfb->fbo) {
+		return;
+	}
+
 	// Clamp to bufferWidth. Sometimes block transfers can cause this to hit.
 	if (x + w >= vfb->bufferWidth) {
 		w = vfb->bufferWidth - x;
 	}
-	if (vfb && vfb->fbo) {
-		if (gameUsesSequentialCopies_) {
-			// Ignore the x/y/etc., read the entire thing.  See below.
-			x = 0;
-			y = 0;
-			w = vfb->width;
-			h = vfb->height;
+	if (gameUsesSequentialCopies_) {
+		// Ignore the x/y/etc., read the entire thing.  See below.
+		x = 0;
+		y = 0;
+		w = vfb->width;
+		h = vfb->height;
+		vfb->memoryUpdated = true;
+		vfb->usageFlags |= FB_USAGE_DOWNLOAD;
+	} else if (x == 0 && y == 0 && w == vfb->width && h == vfb->height) {
+		// Mark it as fully downloaded until next render to it.
+		if (channel == RASTER_COLOR)
 			vfb->memoryUpdated = true;
-			vfb->usageFlags |= FB_USAGE_DOWNLOAD;
-		} else if (x == 0 && y == 0 && w == vfb->width && h == vfb->height) {
-			// Mark it as fully downloaded until next render to it.
-			if (channel == RASTER_COLOR)
-				vfb->memoryUpdated = true;
-			vfb->usageFlags |= FB_USAGE_DOWNLOAD;
-		} else {
-			// Let's try to set the flag eventually, if the game copies a lot.
-			// Some games (like Grand Knights History) copy subranges very frequently.
-			const static int FREQUENT_SEQUENTIAL_COPIES = 3;
-			static int frameLastCopy = 0;
-			static u32 bufferLastCopy = 0;
-			static int copiesThisFrame = 0;
-			if (frameLastCopy != gpuStats.numFlips || bufferLastCopy != vfb->fb_address) {
-				frameLastCopy = gpuStats.numFlips;
-				bufferLastCopy = vfb->fb_address;
-				copiesThisFrame = 0;
-			}
-			if (++copiesThisFrame > FREQUENT_SEQUENTIAL_COPIES) {
-				gameUsesSequentialCopies_ = true;
-			}
+		vfb->usageFlags |= FB_USAGE_DOWNLOAD;
+	} else {
+		// Let's try to set the flag eventually, if the game copies a lot.
+		// Some games (like Grand Knights History) copy subranges very frequently.
+		const static int FREQUENT_SEQUENTIAL_COPIES = 3;
+		static int frameLastCopy = 0;
+		static u32 bufferLastCopy = 0;
+		static int copiesThisFrame = 0;
+		if (frameLastCopy != gpuStats.numFlips || bufferLastCopy != vfb->fb_address) {
+			frameLastCopy = gpuStats.numFlips;
+			bufferLastCopy = vfb->fb_address;
+			copiesThisFrame = 0;
 		}
-
-		// This handles any required stretching internally.
-		ReadbackFramebuffer(vfb, x, y, w, h, channel, mode);
-
-		draw_->Invalidate(InvalidationFlags::CACHED_RENDER_STATE);
-		textureCache_->ForgetLastTexture();
-		RebindFramebuffer("RebindFramebuffer - ReadFramebufferToMemory");
+		if (++copiesThisFrame > FREQUENT_SEQUENTIAL_COPIES) {
+			gameUsesSequentialCopies_ = true;
+		}
 	}
+
+	// This handles any required stretching internally.
+	ReadbackFramebuffer(vfb, x, y, w, h, channel, mode);
+
+	draw_->Invalidate(InvalidationFlags::CACHED_RENDER_STATE);
+	textureCache_->ForgetLastTexture();
+	RebindFramebuffer("RebindFramebuffer - ReadFramebufferToMemory");
 }
 
 void FramebufferManagerCommon::FlushBeforeCopy() {

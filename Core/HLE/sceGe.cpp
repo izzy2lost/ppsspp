@@ -231,9 +231,9 @@ void __GeDoState(PointerWrap &p) {
 		std::list<GeInterruptData_v1> old;
 		Do(p, old);
 		ge_pending_cb.clear();
-		for (auto it = old.begin(), end = old.end(); it != end; ++it) {
-			GeInterruptData intrdata = {it->listid, it->pc};
-			intrdata.cmd = Memory::ReadUnchecked_U32(it->pc - 4) >> 24;
+		for (const auto &ge : old) {
+			GeInterruptData intrdata = {ge.listid, ge.pc};
+			intrdata.cmd = Memory::ReadUnchecked_U32(ge.pc - 4) >> 24;
 			ge_pending_cb.push_back(intrdata);
 		}
 	}
@@ -298,8 +298,8 @@ void __GeWaitCurrentThread(GPUSyncType type, SceUID waitId, const char *reason) 
 static bool __GeTriggerWait(WaitType waitType, SceUID waitId, WaitingThreadList &waitingThreads) {
 	// TODO: Do they ever get a result other than 0?
 	bool wokeThreads = false;
-	for (auto it = waitingThreads.begin(), end = waitingThreads.end(); it != end; ++it)
-		wokeThreads |= HLEKernel::ResumeFromWait(*it, waitType, waitId, 0);
+	for (int threadID : waitingThreads)
+		wokeThreads |= HLEKernel::ResumeFromWait(threadID, waitType, waitId, 0);
 	waitingThreads.clear();
 	return wokeThreads;
 }
@@ -391,7 +391,7 @@ static u32 sceGeDrawSync(u32 mode) {
 	//wait/check entire drawing state
 	if (PSP_CoreParameter().compat.flags().DrawSyncEatCycles)
 		hleEatCycles(500000); //HACK(?) : Potential fix for Crash Tag Team Racing and a few Gundam games
-	else
+	else if (!PSP_CoreParameter().compat.flags().DrawSyncInstant)
 		hleEatCycles(1240);
 	DEBUG_LOG(Log::sceGe, "sceGeDrawSync(mode=%d)  (0=wait for completion, 1=peek)", mode);
 	return gpu->DrawSync(mode);

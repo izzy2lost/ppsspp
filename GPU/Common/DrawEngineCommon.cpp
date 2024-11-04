@@ -44,6 +44,7 @@ DrawEngineCommon::DrawEngineCommon() : decoderMap_(16) {
 	transformedExpanded_ = (TransformedVertex *)AllocateMemoryPages(3 * TRANSFORMED_VERTEX_BUFFER_SIZE, MEM_PROT_READ | MEM_PROT_WRITE);
 	decoded_ = (u8 *)AllocateMemoryPages(DECODED_VERTEX_BUFFER_SIZE, MEM_PROT_READ | MEM_PROT_WRITE);
 	decIndex_ = (u16 *)AllocateMemoryPages(DECODED_INDEX_BUFFER_SIZE, MEM_PROT_READ | MEM_PROT_WRITE);
+	indexGen.Setup(decIndex_);
 }
 
 DrawEngineCommon::~DrawEngineCommon() {
@@ -806,6 +807,8 @@ int DrawEngineCommon::ComputeNumVertsToDecode() const {
 	return sum;
 }
 
+// Takes a list of consecutive PRIM opcodes, and extends the current draw call to include them.
+// This is just a performance optimization.
 int DrawEngineCommon::ExtendNonIndexedPrim(const uint32_t *cmd, const uint32_t *stall, u32 vertTypeID, bool clockwise, int *bytesRead, bool isTriangle) {
 	const uint32_t *start = cmd;
 	int prevDrawVerts = numDrawVerts_ - 1;
@@ -971,7 +974,6 @@ bool DrawEngineCommon::SubmitPrim(const void *verts, const void *inds, GEPrimiti
 
 void DrawEngineCommon::DecodeVerts(u8 *dest) {
 	// Note that this should be able to continue a partial decode - we don't necessarily start from zero here (although we do most of the time).
-
 	int i = decodeVertsCounter_;
 	int stride = (int)dec_->GetDecVtxFmt().stride;
 	for (; i < numDrawVerts_; i++) {
@@ -981,6 +983,12 @@ void DrawEngineCommon::DecodeVerts(u8 *dest) {
 		drawVertexOffsets_[i] = numDecodedVerts_ - indexLowerBound;
 
 		int indexUpperBound = dv.indexUpperBound;
+
+		if (indexUpperBound + 1 - indexLowerBound + numDecodedVerts_ >= VERTEX_BUFFER_MAX) {
+			// Hit our limit! Stop decoding in this draw.
+			break;
+		}
+
 		// Decode the verts (and at the same time apply morphing/skinning). Simple.
 		dec_->DecodeVerts(dest + numDecodedVerts_ * stride, dv.verts, &dv.uvScale, indexLowerBound, indexUpperBound);
 		numDecodedVerts_ += indexUpperBound - indexLowerBound + 1;

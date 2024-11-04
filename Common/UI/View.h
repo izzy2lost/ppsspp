@@ -93,7 +93,7 @@ struct FontStyle {
 struct Theme {
 	FontStyle uiFont;
 	FontStyle uiFontSmall;
-	FontStyle uiFontSmaller;
+	FontStyle uiFontBig;
 
 	ImageID checkOn;
 	ImageID checkOff;
@@ -825,14 +825,14 @@ public:
 	void GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const override;
 
 	void SetPasswordDisplay() {
-		passwordDisplay_ = true;
+		passwordMasking_ = true;
 	}
 protected:
 	virtual std::string ValueText() const = 0;
 
 	float CalculateValueScale(const UIContext &dc, std::string_view valueText, float availWidth) const;
 
-	bool passwordDisplay_ = false;
+	bool passwordMasking_ = false;
 };
 
 class ChoiceWithCallbackValueDisplay : public AbstractChoiceWithValueDisplay {
@@ -853,9 +853,11 @@ public:
 	std::string DescribeText() const override;
 	void GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const override;
 	void SetLarge(bool large) { large_ = large; }
+	void SetPopupStyle(bool popupStyle) { popupStyle_ = popupStyle; }
 private:
 	std::string text_;
 	bool large_ = false;
+	bool popupStyle_ = false;
 };
 
 class PopupHeader : public Item {
@@ -982,10 +984,10 @@ private:
 class TextView : public InertView {
 public:
 	TextView(std::string_view text, LayoutParams *layoutParams = 0)
-		: InertView(layoutParams), text_(text), textAlign_(0), textColor_(0xFFFFFFFF), small_(false), shadow_(false), focusable_(false), clip_(true) {}
+		: InertView(layoutParams), text_(text), textAlign_(0), textColor_(0xFFFFFFFF), small_(false) {}
 
 	TextView(std::string_view text, int textAlign, bool small, LayoutParams *layoutParams = 0)
-		: InertView(layoutParams), text_(text), textAlign_(textAlign), textColor_(0xFFFFFFFF), small_(small), shadow_(false), focusable_(false), clip_(true) {}
+		: InertView(layoutParams), text_(text), textAlign_(textAlign), textColor_(0xFFFFFFFF), small_(small) {}
 
 	void GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const override;
 	void Draw(UIContext &dc) override;
@@ -994,6 +996,7 @@ public:
 	const std::string &GetText() const { return text_; }
 	std::string DescribeText() const override { return GetText(); }
 	void SetSmall(bool small) { small_ = small; }
+	void SetBig(bool big) { big_ = big; }
 	void SetTextColor(uint32_t color) { textColor_ = color; hasTextColor_ = true; }
 	void SetShadow(bool shadow) { shadow_ = shadow; }
 	void SetFocusable(bool focusable) { focusable_ = focusable; }
@@ -1009,9 +1012,10 @@ private:
 	uint32_t textColor_;
 	bool hasTextColor_ = false;
 	bool small_;
-	bool shadow_;
-	bool focusable_;
-	bool clip_;
+	bool big_ = false;
+	bool shadow_ = false;
+	bool focusable_ = false;
+	bool clip_ = true;
 	bool bullet_ = false;
 	float pad_ = 0.0f;
 };
@@ -1024,6 +1028,9 @@ public:
 	const std::string &GetText() const { return text_; }
 	void SetMaxLen(size_t maxLen) { maxLen_ = maxLen; }
 	void SetTextAlign(int align) { align_ = align; }  // Only really useful for setting FLAG_DYNAMIC_ASCII
+	void SetPasswordMasking(bool masking) {
+		passwordMasking_ = masking;
+	}
 
 	void FocusChanged(int focusFlags) override;
 	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
@@ -1048,6 +1055,7 @@ private:
 	int scrollPos_ = 0;
 	size_t maxLen_;
 	bool ctrlDown_ = false;  // TODO: Make some global mechanism for this.
+	bool passwordMasking_ = false;
 	int align_ = 0;
 	// TODO: Selections
 };

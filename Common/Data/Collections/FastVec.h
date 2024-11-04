@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 
 #include "Common/Log.h"
 
@@ -19,7 +20,7 @@ public:
 		data_ = (T *)malloc(initialCapacity * sizeof(T));
 		_assert_(data_ != nullptr);
 	}
-	~FastVec() { if (data_) free(data_); }
+	~FastVec() { free(data_); }
 
 	T &push_uninitialized() {
 		if (size_ < capacity_) {

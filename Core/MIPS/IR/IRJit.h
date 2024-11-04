@@ -51,7 +51,7 @@ public:
 	IRBlock() {}
 	IRBlock(u32 emAddr, u32 origSize, int instOffset, u32 numInstructions)
 		: origAddr_(emAddr), origSize_(origSize), arenaOffset_(instOffset), numIRInstructions_(numInstructions) {}
-	IRBlock(IRBlock &&b) {
+	IRBlock(IRBlock &&b) noexcept {
 		arenaOffset_ = b.arenaOffset_;
 		hash_ = b.hash_;
 		origAddr_ = b.origAddr_;
@@ -84,12 +84,15 @@ public:
 	}
 	bool OverlapsRange(u32 addr, u32 size) const;
 
-	void GetRange(u32 &start, u32 &size) const {
-		start = origAddr_;
-		size = origSize_;
+	void GetRange(u32 *start, u32 *size) const {
+		*start = origAddr_;
+		*size = origSize_;
 	}
 	u32 GetOriginalStart() const {
 		return origAddr_;
+	}
+	u64 GetHash() const {
+		return hash_;
 	}
 
 	void Finalize(int number);
@@ -129,7 +132,7 @@ public:
 			return nullptr;
 		}
 	}
-	void RemoveBlock(int blockNum);
+	void RemoveBlockFromPageLookup(int blockNum);
 	int GetBlockNumFromIRArenaOffset(int offset) const;
 	const IRInst *GetBlockInstructionPtr(const IRBlock &block) const {
 		return arena_.data() + block.GetIRArenaOffset();
@@ -167,7 +170,7 @@ public:
 		JitBlockMeta meta{};
 		if (IsValidBlock(blockNum)) {
 			meta.valid = true;
-			blocks_[blockNum].GetRange(meta.addr, meta.sizeInBytes);
+			blocks_[blockNum].GetRange(&meta.addr, &meta.sizeInBytes);
 		}
 		return meta;
 	}

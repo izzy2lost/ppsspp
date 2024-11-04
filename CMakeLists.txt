@@ -143,7 +143,7 @@ if(IOS_APP_STORE)
 	set(CMAKE_XCODE_SCHEME_ENABLE_GPU_API_VALIDATION FALSE)
 	set(CMAKE_XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE DISABLED)
 	message("iOS App Store build")
-else()
+elseif(IOS)
 	message("iOS sideload build")
 endif()
 
@@ -186,6 +186,7 @@ option(USE_SYSTEM_MINIUPNPC "Dynamically link against system miniUPnPc" ${USE_SY
 option(USE_ASAN "Use address sanitizer" OFF)
 option(USE_UBSAN "Use undefined behaviour sanitizer" OFF)
 option(USE_CCACHE "Use ccache if detected" ON)
+option(USE_NO_MMAP "Disable mmap usage" OFF)
 
 if(USE_CCACHE)
 	include(ccache)
@@ -245,6 +246,12 @@ endif()
 # want to have to update all build systems.
 if(HTTPS_NOT_AVAILABLE)
 	add_definitions(-DHTTPS_NOT_AVAILABLE)
+endif()
+
+# Disable the usage of MMAP for the memory system.
+# It is not tested on all platforms and can cause issues.
+if(USE_NO_MMAP)
+	add_definitions(-DNO_MMAP -DMASKED_PSP_MEMORY)
 endif()
 
 # Work around for some misfeature of the current glslang build system
@@ -638,6 +645,7 @@ add_library(Common STATIC
 	Common/Data/Collections/Hashmaps.h
 	Common/Data/Collections/TinySet.h
 	Common/Data/Collections/FastVec.h
+	Common/Data/Collections/CyclicBuffer.h
 	Common/Data/Collections/ThreadSafeList.h
 	Common/Data/Color/RGBAUtil.cpp
 	Common/Data/Color/RGBAUtil.h
@@ -980,7 +988,8 @@ if(USE_FFMPEG)
 	find_package(FFmpeg REQUIRED avcodec avformat avutil swresample swscale)
 	# Check if we need to use avcodec_(alloc|free)_frame instead of av_frame_(alloc|free)
 	# Check if we need to use const AVCodec
-	set(CMAKE_REQUIRED_LIBRARIES avcodec;avformat)
+	set(CMAKE_REQUIRED_INCLUDES ${FFmpeg_INCLUDE_avcodec};${FFmpeg_INCLUDE_avformat})
+	set(CMAKE_REQUIRED_LIBRARIES FFmpeg::avcodec;FFmpeg::avformat)
 	set(CMAKE_REQUIRED_FLAGS "-pedantic -Wall -Werror -Wno-unused-variable")
 	check_cxx_source_compiles("extern \"C\" {
 		#include <libavcodec/avcodec.h>
@@ -2335,6 +2344,8 @@ add_library(${CoreLibName} ${CoreLinkType}
 	Core/MIPS/MIPSVFPUFallbacks.h
 	Core/MIPS/MIPSAsm.cpp
 	Core/MIPS/MIPSAsm.h
+	Core/MIPS/MIPSTracer.cpp
+	Core/MIPS/MIPSTracer.h
 	Core/MemFault.cpp
 	Core/MemFault.h
 	Core/MemMap.cpp
@@ -2439,7 +2450,7 @@ if(FFmpeg_FOUND)
 		target_compile_definitions(${CoreLibName} PRIVATE HAVE_LIBAVCODEC_CONST_AVCODEC=1)
 	endif()
 	set_target_properties(${CoreLibName} PROPERTIES NO_SYSTEM_FROM_IMPORTED true)
-	target_include_directories(${CoreLibName} BEFORE PUBLIC ${FFmpeg_INCLUDE_avcodec})
+	target_include_directories(${CoreLibName} BEFORE PUBLIC ${FFmpeg_INCLUDE_avcodec} ${FFmpeg_INCLUDE_avformat})
 	target_link_libraries(${CoreLibName}
 		FFmpeg::avcodec
 		FFmpeg::avformat

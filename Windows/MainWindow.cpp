@@ -583,25 +583,21 @@ namespace MainWindow
 
 	void DestroyDebugWindows() {
 		DialogManager::RemoveDlg(disasmWindow);
-		if (disasmWindow)
-			delete disasmWindow;
+		delete disasmWindow;
 		disasmWindow = nullptr;
 
 #if PPSSPP_API(ANY_GL)
 		DialogManager::RemoveDlg(geDebuggerWindow);
-		if (geDebuggerWindow)
-			delete geDebuggerWindow;
+		delete geDebuggerWindow;
 		geDebuggerWindow = nullptr;
 #endif
 
 		DialogManager::RemoveDlg(memoryWindow);
-		if (memoryWindow)
-			delete memoryWindow;
+		delete memoryWindow;
 		memoryWindow = nullptr;
 
 		DialogManager::RemoveDlg(vfpudlg);
-		if (vfpudlg)
-			delete vfpudlg;
+		delete vfpudlg;
 		vfpudlg = nullptr;
 	}
 
@@ -765,7 +761,7 @@ namespace MainWindow
 
 		switch (message) {
 		case WM_CREATE:
-			if (!DoesVersionMatchWindows(6, 0, 0, 0, true)) {
+			if (!IsVistaOrHigher()) {
 				// Remove the D3D11 choice on versions below XP
 				RemoveMenu(GetMenu(hWnd), ID_OPTIONS_DIRECT3D11, MF_BYCOMMAND);
 			}

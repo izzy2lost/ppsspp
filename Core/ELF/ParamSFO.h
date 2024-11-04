@@ -35,6 +35,7 @@ public:
 
 	int GetValueInt(const std::string &key) const;
 	std::string GetValueString(const std::string &key) const;
+	bool HasKey(const std::string &key) const;
 	const u8 *GetValueData(const std::string &key, unsigned int *size) const;
 
 	std::vector<std::string> GetKeys() const;
@@ -82,8 +83,7 @@ private:
 		void SetData(const u8* data, int size);
 
 		~ValueData() {
-			if (u_value)
-				delete[] u_value;
+			delete[] u_value;
 		}
 	};
 

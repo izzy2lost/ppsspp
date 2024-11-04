@@ -33,6 +33,7 @@
 #include "Core/FileSystems/ISOFileSystem.h"
 #include "Core/FileSystems/DirectoryFileSystem.h"
 #include "Core/FileSystems/VirtualDiscFileSystem.h"
+#include "Core/HLE/sceUtility.h"
 #include "Core/ELF/PBPReader.h"
 #include "Core/SaveState.h"
 #include "Core/System.h"
@@ -128,7 +129,7 @@ bool GameInfo::Delete() {
 	}
 }
 
-u64 GameInfo::GetGameSizeOnDiskInBytes() {
+u64 GameInfo::GetSizeOnDiskInBytes() {
 	switch (fileType) {
 	case IdentifiedFileType::PSP_PBP_DIRECTORY:
 	case IdentifiedFileType::PSP_SAVEDATA_DIRECTORY:
@@ -140,7 +141,7 @@ u64 GameInfo::GetGameSizeOnDiskInBytes() {
 	}
 }
 
-u64 GameInfo::GetGameSizeUncompressedInBytes() {
+u64 GameInfo::GetSizeUncompressedInBytes() {
 	switch (fileType) {
 	case IdentifiedFileType::PSP_PBP_DIRECTORY:
 	case IdentifiedFileType::PSP_SAVEDATA_DIRECTORY:
@@ -158,6 +159,39 @@ u64 GameInfo::GetGameSizeUncompressedInBytes() {
 			return GetFileLoader()->FileSize();
 		}
 	}
+	}
+}
+
+std::string GetFileDateAsString(const Path &filename) {
+	tm time;
+	if (File::GetModifTime(filename, time)) {
+		char buf[256];
+		switch (g_Config.iDateFormat) {
+		case PSP_SYSTEMPARAM_DATE_FORMAT_YYYYMMDD:
+			strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &time);
+			break;
+		case PSP_SYSTEMPARAM_DATE_FORMAT_MMDDYYYY:
+			strftime(buf, sizeof(buf), "%m-%d-%Y %H:%M:%S", &time);
+			break;
+		case PSP_SYSTEMPARAM_DATE_FORMAT_DDMMYYYY:
+			strftime(buf, sizeof(buf), "%d-%m-%Y %H:%M:%S", &time);
+			break;
+		default: // Should never happen
+			return "";
+		}
+		return std::string(buf);
+	}
+	return "";
+}
+
+std::string GameInfo::GetMTime() const {
+	switch (fileType) {
+	case IdentifiedFileType::PSP_SAVEDATA_DIRECTORY:
+		return GetFileDateAsString(GetFilePath() / "PARAM.SFO");
+	case IdentifiedFileType::PSP_PBP_DIRECTORY:
+		return GetFileDateAsString(GetFilePath() / "EBOOT.PBP");
+	default:
+		return GetFileDateAsString(GetFilePath());
 	}
 }
 
@@ -183,7 +217,7 @@ std::vector<Path> GameInfo::GetSaveDataDirectories() {
 	return directories;
 }
 
-u64 GameInfo::GetSaveDataSizeInBytes() {
+u64 GameInfo::GetGameSavedataSizeInBytes() {
 	if (fileType == IdentifiedFileType::PSP_SAVEDATA_DIRECTORY || fileType == IdentifiedFileType::PPSSPP_SAVESTATE) {
 		return 0;
 	}
@@ -466,6 +500,10 @@ public:
 			info_->fileType = Identify_File(info_->GetFileLoader().get(), &errorString);
 		}
 
+		if (!info_->Ready(GameInfoFlags::FILE_TYPE) && !(flags_ & GameInfoFlags::FILE_TYPE)) {
+			_dbg_assert_(false);
+		}
+
 		switch (info_->fileType) {
 		case IdentifiedFileType::PSP_PBP:
 		case IdentifiedFileType::PSP_PBP_DIRECTORY:
@@ -484,6 +522,10 @@ public:
 						goto handleELF;
 					}
 					ERROR_LOG(Log::Loader, "invalid pbp '%s'\n", pbpLoader->GetPath().c_str());
+					// We can't win here - just mark everything pending as fetched, and let the caller
+					// handle the missing data.
+					std::unique_lock<std::mutex> lock(info_->lock);
+					info_->MarkReadyNoLock(flags_);
 					return;
 				}
 
@@ -682,10 +724,17 @@ handleELF:
 				// few files.
 				auto fl = info_->GetFileLoader();
 				if (!fl) {
+					// BAD! Can't win here.
+					ERROR_LOG(Log::Loader, "Failed getting game info for ISO %s", info_->GetFilePath().ToVisualString().c_str());
+					std::unique_lock<std::mutex> lock(info_->lock);
+					info_->MarkReadyNoLock(flags_);
 					return;
 				}
 				BlockDevice *bd = constructBlockDevice(info_->GetFileLoader().get());
 				if (!bd) {
+					ERROR_LOG(Log::Loader, "Failed constructing block device for ISO %s", info_->GetFilePath().ToVisualString().c_str());
+					std::unique_lock<std::mutex> lock(info_->lock);
+					info_->MarkReadyNoLock(flags_);
 					return;
 				}
 				ISOFileSystem umd(&handles, bd);
@@ -768,12 +817,24 @@ handleELF:
 
 		if (flags_ & GameInfoFlags::SIZE) {
 			std::lock_guard<std::mutex> lock(info_->lock);
-			info_->gameSizeOnDisk = info_->GetGameSizeOnDiskInBytes();
-			info_->saveDataSize = info_->GetSaveDataSizeInBytes();
-			info_->installDataSize = info_->GetInstallDataSizeInBytes();
+			info_->gameSizeOnDisk = info_->GetSizeOnDiskInBytes();
+			switch (info_->fileType) {
+			case IdentifiedFileType::PSP_ISO:
+			case IdentifiedFileType::PSP_ISO_NP:
+			case IdentifiedFileType::PSP_DISC_DIRECTORY:
+			case IdentifiedFileType::PSP_PBP:
+			case IdentifiedFileType::PSP_PBP_DIRECTORY:
+				info_->saveDataSize = info_->GetGameSavedataSizeInBytes();
+				info_->installDataSize = info_->GetInstallDataSizeInBytes();
+				break;
+			default:
+				info_->saveDataSize = 0;
+				info_->installDataSize = 0;
+				break;
+			}
 		}
 		if (flags_ & GameInfoFlags::UNCOMPRESSED_SIZE) {
-			info_->gameSizeUncompressed = info_->GetGameSizeUncompressedInBytes();
+			info_->gameSizeUncompressed = info_->GetSizeUncompressedInBytes();
 		}
 
 		// Time to update the flags.
@@ -882,6 +943,8 @@ void GameInfoCache::PurgeType(IdentifiedFileType fileType) {
 // Can also be called from the audio thread for menu background music, but that cannot request images!
 std::shared_ptr<GameInfo> GameInfoCache::GetInfo(Draw::DrawContext *draw, const Path &gamePath, GameInfoFlags wantFlags) {
 	const std::string &pathStr = gamePath.ToString();
+
+	// _dbg_assert_(gamePath != GetSysDirectory(DIRECTORY_SAVEDATA));
 
 	// This is always needed to determine the method to get the other info, so make sure it's computed first.
 	wantFlags |= GameInfoFlags::FILE_TYPE;

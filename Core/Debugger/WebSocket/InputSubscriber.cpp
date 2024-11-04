@@ -50,6 +50,11 @@ const std::unordered_map<std::string, uint32_t> buttonLookup = {
 	{ "forward", CTRL_FORWARD },
 	{ "back", CTRL_BACK },
 	{ "playpause", CTRL_PLAYPAUSE },
+	// Obscure unmapped keys, see issue #17464
+	{ "l2", CTRL_L2 },
+	{ "l3", CTRL_L3 },
+	{ "r2", CTRL_R2 },
+	{ "r3", CTRL_R3 },
 };
 
 struct WebSocketInputState : public DebuggerSubscriber {
@@ -176,7 +181,7 @@ void WebSocketInputState::ButtonsPress(DebuggerRequest &req) {
 	press.duration = 1;
 	if (!req.ParamU32("duration", &press.duration, false, DebuggerParamType::OPTIONAL))
 		return;
-	if (press.duration < 0)
+	if ((int)press.duration < 0)
 		return req.Fail("Parameter 'duration' must not be negative");
 	const JsonNode *value = req.data.get("ticket");
 	press.ticket = value ? json_stringify(value) : "";

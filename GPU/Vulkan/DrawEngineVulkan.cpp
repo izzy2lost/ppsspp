@@ -62,7 +62,6 @@ DrawEngineVulkan::DrawEngineVulkan(Draw::DrawContext *draw)
 	: draw_(draw) {
 	decOptions_.expandAllWeightsToFloat = false;
 	decOptions_.expand8BitNormalsToFloat = false;
-	indexGen.Setup(decIndex_);
 }
 
 void DrawEngineVulkan::InitDeviceObjects() {
@@ -167,6 +166,10 @@ void DrawEngineVulkan::DeviceRestore(Draw::DrawContext *draw) {
 void DrawEngineVulkan::BeginFrame() {
 	lastPipeline_ = nullptr;
 
+	// These will be re-bound if needed, let's not let old bindings linger around too long.
+	boundDepal_ = VK_NULL_HANDLE;
+	boundSecondary_ = VK_NULL_HANDLE;
+
 	// pushUBO is the thin3d push pool, don't need to BeginFrame again.
 	pushVertex_->BeginFrame();
 	pushIndex_->BeginFrame();
@@ -174,11 +177,15 @@ void DrawEngineVulkan::BeginFrame() {
 	tessDataTransferVulkan->SetPushPool(pushUBO_);
 
 	DirtyAllUBOs();
+
+	AssertEmpty();
 }
 
 void DrawEngineVulkan::EndFrame() {
 	stats_.pushVertexSpaceUsed = (int)pushVertex_->GetUsedThisFrame();
 	stats_.pushIndexSpaceUsed = (int)pushIndex_->GetUsedThisFrame();
+
+	AssertEmpty();
 }
 
 void DrawEngineVulkan::DirtyAllUBOs() {
@@ -211,6 +218,8 @@ void DrawEngineVulkan::Invalidate(InvalidationCallbackFlags flags) {
 // The inline wrapper in the header checks for numDrawCalls_ == 0
 void DrawEngineVulkan::DoFlush() {
 	VulkanRenderManager *renderManager = (VulkanRenderManager *)draw_->GetNativeObject(Draw::NativeObject::RENDER_MANAGER);
+
+	renderManager->AssertInRenderPass();
 
 	PROFILE_THIS_SCOPE("Flush");
 

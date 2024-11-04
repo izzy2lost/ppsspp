@@ -539,10 +539,10 @@ void PSPSaveDialog::DisplaySaveDataInfo1() {
 		titleStyle.color = CalcFadedColor(0xFFC0C0C0);
 		PPGeStyle textStyle = FadedStyle(PPGeAlign::BOX_LEFT, 0.5f);
 
-		PPGeDrawText(titleTxt.c_str(), 180, 136, titleStyle);
-		PPGeDrawText(timeTxt.c_str(), 180, 137, textStyle);
-		PPGeDrawText(saveTitleTxt.c_str(), 175, 159, saveTitleStyle);
-		PPGeDrawTextWrapped(saveDetailTxt.c_str(), 175, 181, 480 - 175, 250 - 181, textStyle);
+		PPGeDrawText(titleTxt, 180, 136, titleStyle);
+		PPGeDrawText(timeTxt, 180, 137, textStyle);
+		PPGeDrawText(saveTitleTxt, 175, 159, saveTitleStyle);
+		PPGeDrawTextWrapped(saveDetailTxt, 175, 181, 480 - 175, 250 - 181, textStyle);
 	}
 }
 
@@ -1112,7 +1112,8 @@ void PSPSaveDialog::ExecuteNotVisibleIOAction() {
 	param.ClearSFOCache();
 	auto &result = param.GetPspParam()->common.result;
 
-	switch ((SceUtilitySavedataType)(u32)param.GetPspParam()->mode) {
+	SceUtilitySavedataType utilityMode = (SceUtilitySavedataType)(u32)param.GetPspParam()->mode;
+	switch (utilityMode) {
 	case SCE_UTILITY_SAVEDATA_TYPE_LOAD: // Only load and exit
 	case SCE_UTILITY_SAVEDATA_TYPE_AUTOLOAD:
 		result = param.Load(param.GetPspParam(), GetSelectedSaveDirName(), currentSelectedSave);

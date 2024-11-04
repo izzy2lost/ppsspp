@@ -348,17 +348,6 @@ static const KeyMap_IntStrPair key_names[] = {
 	{NKCODE_EXT_MOUSEWHEEL_UP, "MWheelU"},
 	{NKCODE_EXT_MOUSEWHEEL_DOWN, "MWheelD"},
 
-
-	{NKCODE_EXT_MOTION_UP, "MotionUp"},
-	{NKCODE_EXT_MOTION_DOWN, "MotionDown"},
-	{NKCODE_EXT_MOTION_LEFT, "MotionLeft"},
-	{NKCODE_EXT_MOTION_RIGHT, "MotionRight"},
-	{NKCODE_EXT_MOTION_FORWARD, "MotionFwd"},
-	{NKCODE_EXT_ROTATION_UP, "RotationUp"},
-	{NKCODE_EXT_ROTATION_DOWN, "RotationDown"},
-	{NKCODE_EXT_ROTATION_LEFT, "RotationLeft"},
-	{NKCODE_EXT_ROTATION_RIGHT, "RotationRight"},
-
 	{NKCODE_START_QUESTION, "¿"},
 	{NKCODE_LEFTBRACE, "{"},
 	{NKCODE_RIGHTBRACE, "}"},
@@ -429,11 +418,12 @@ const KeyMap_IntStrPair psp_button_names[] = {
 	{VIRTKEY_AXIS_SWAP, "AxisSwap"},
 
 	{VIRTKEY_FASTFORWARD, "Fast-forward"},
+	{VIRTKEY_PAUSE, "Pause"},
 	{VIRTKEY_SPEED_TOGGLE, "SpeedToggle"},
 	{VIRTKEY_SPEED_CUSTOM1, "Alt speed 1"},
 	{VIRTKEY_SPEED_CUSTOM2, "Alt speed 2"},
 	{VIRTKEY_SPEED_ANALOG, "Analog speed"},
-	{VIRTKEY_PAUSE, "Pause"},
+	{VIRTKEY_RESET_EMULATION, "Reset"},
 	{VIRTKEY_FRAME_ADVANCE, "Frame Advance"},
 #if !defined(MOBILE_DEVICE)
 	{VIRTKEY_RECORD, "Audio/Video Recording" },
@@ -484,6 +474,10 @@ const KeyMap_IntStrPair psp_button_names[] = {
 	{CTRL_VOL_DOWN, "Vol -"},
 	{CTRL_SCREEN, "Screen"},
 	{CTRL_NOTE, "Note"},
+	{CTRL_L2, "Dev-kit L2"},
+	{CTRL_L3, "Dev-kit L3"},
+	{CTRL_R2, "Dev-kit R2"},
+	{CTRL_R3, "Dev-kit R3"},
 };
 
 // key here can be other things than InputKeyCode.
@@ -740,7 +734,7 @@ void RestoreDefault() {
 	} else if (IsMOQII7S(name)) {
 		SetDefaultKeyMap(DEFAULT_MAPPING_MOQI_I7S, false);
 	} else if (IsRetroid(name)) {
-		SetDefaultKeyMap(DEFAULT_MAPPING_RETRO_STATION_CONTROLLER, false);
+		SetDefaultKeyMap(DEFAULT_MAPPING_RETROID_CONTROLLER, false);
 	} else {
 		SetDefaultKeyMap(DEFAULT_MAPPING_ANDROID_PAD, false);
 	}
@@ -861,7 +855,7 @@ void AutoConfForPad(const std::string &name) {
 	if (name.find("Xbox") != std::string::npos) {
 		SetDefaultKeyMap(DEFAULT_MAPPING_ANDROID_XBOX, false);
 	} else if (name == "Retro Station Controller") {
-		SetDefaultKeyMap(DEFAULT_MAPPING_RETRO_STATION_CONTROLLER, false);
+		SetDefaultKeyMap(DEFAULT_MAPPING_RETROID_CONTROLLER, false);
 	} else {
 		SetDefaultKeyMap(DEFAULT_MAPPING_ANDROID_PAD, false);
 	}

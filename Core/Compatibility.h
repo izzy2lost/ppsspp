@@ -53,6 +53,7 @@ struct CompatFlags {
 	bool ClearToRAM;
 	bool Force04154000Download;
 	bool DrawSyncEatCycles;
+	bool DrawSyncInstant;
 	bool FakeMipmapChange;
 	bool RequireBufferedRendering;
 	bool RequireBlockTransfer;
@@ -105,10 +106,12 @@ struct CompatFlags {
 	bool LoadCLUTFromCurrentFrameOnly;
 	bool ForceUMDReadSpeed;
 	bool AllowDelayedReadbacks;
+	bool KernelGetSystemTimeLowEatMoreCycles;
 	bool TacticsOgreEliminateDebugReadback;
 	bool FramebufferAllowLargeVerticalOffset;
 	bool DisableMemcpySlicing;
 	bool ForceEnableGPUReadback;
+	bool UseFFMPEGFindStreamInfo;
 };
 
 struct VRCompat {

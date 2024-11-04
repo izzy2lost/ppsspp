@@ -254,6 +254,7 @@ bool CPU_Init(std::string *errorString, FileLoader *loadedFile) {
 	if (!g_CoreParameter.mountIso.empty()) {
 		g_CoreParameter.mountIsoLoader = ConstructFileLoader(g_CoreParameter.mountIso);
 	}
+	g_CoreParameter.fileType = type;
 
 	MIPSAnalyst::Reset();
 	Replacement_Init();
@@ -289,8 +290,8 @@ bool CPU_Init(std::string *errorString, FileLoader *loadedFile) {
 		break;
 	default:
 		// Can we even get here?
-		WARN_LOG(Log::Loader, "CPU_Init didn't recognize file. %s", errorString->c_str());
-		break;
+		ERROR_LOG(Log::Loader, "CPU_Init didn't recognize file. %s", errorString->c_str());
+		return false;
 	}
 
 	// Here we have read the PARAM.SFO, let's see if we need any compatibility overrides.
@@ -550,6 +551,9 @@ bool PSP_IsQuitting() {
 }
 
 void PSP_Shutdown() {
+	// Reduce the risk for weird races with the Windows GE debugger.
+	gpuDebug = nullptr;
+
 	Achievements::UnloadGame();
 
 	// Do nothing if we never inited.
@@ -594,7 +598,6 @@ bool PSP_Reboot(std::string *error_string) {
 }
 
 void PSP_BeginHostFrame() {
-	// Reapply the graphics state of the PSP
 	if (gpu) {
 		gpu->BeginHostFrame();
 	}
@@ -623,7 +626,6 @@ void PSP_RunLoopWhileState() {
 }
 
 void PSP_RunLoopUntil(u64 globalticks) {
-	SaveState::Process();
 	if (coreState == CORE_POWERDOWN || coreState == CORE_BOOT_ERROR || coreState == CORE_RUNTIME_ERROR) {
 		return;
 	} else if (coreState == CORE_STEPPING) {
@@ -746,6 +748,5 @@ bool CreateSysDirectories() {
 			File::CreateEmptyFile(path / ".nomedia");
 		}
 	}
-
 	return true;
 }

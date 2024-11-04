@@ -9,12 +9,14 @@
 #include "Common/SysError.h"
 #include "Common/Log.h"
 #include "Common/StringUtils.h"
+#include <wrl/client.h>
+
+using namespace Microsoft::WRL;
 
 struct ID3DXConstantTable;
 
-LPD3DBLOB CompileShaderToByteCodeD3D9(const char *code, const char *target, std::string *errorMessage) {
-	LPD3DBLOB pShaderCode = nullptr;
-	LPD3DBLOB pErrorMsg = nullptr;
+HRESULT CompileShaderToByteCodeD3D9(const char *code, const char *target, std::string *errorMessage, ID3DBlob **ppShaderCode) {
+	ComPtr<ID3DBlob> pErrorMsg;
 
 	// Compile pixel shader.
 	HRESULT hr = dyn_D3DCompile(code,
@@ -26,7 +28,7 @@ LPD3DBLOB CompileShaderToByteCodeD3D9(const char *code, const char *target, std:
 		target,
 		0,
 		0,
-		&pShaderCode,
+		ppShaderCode,
 		&pErrorMsg);
 
 	if (pErrorMsg) {
@@ -34,31 +36,21 @@ LPD3DBLOB CompileShaderToByteCodeD3D9(const char *code, const char *target, std:
 
 		OutputDebugStringUTF8(LineNumberString(std::string(code)).c_str());
 		OutputDebugStringUTF8(errorMessage->c_str());
-
-		pErrorMsg->Release();
-		if (pShaderCode) {
-			pShaderCode->Release();
-			pShaderCode = nullptr;
-		}
 	} else if (FAILED(hr)) {
 		*errorMessage = GetStringErrorMsg(hr);
-		if (pShaderCode) {
-			pShaderCode->Release();
-			pShaderCode = nullptr;
-		}
 	} else {
 		errorMessage->clear();
 	}
 
-	return pShaderCode;
+	return hr;
 }
 
 bool CompilePixelShaderD3D9(LPDIRECT3DDEVICE9 device, const char *code, LPDIRECT3DPIXELSHADER9 *pShader, std::string *errorMessage) {
-	LPD3DBLOB pShaderCode = CompileShaderToByteCodeD3D9(code, "ps_3_0", errorMessage);
-	if (pShaderCode) {
+	ComPtr<ID3DBlob> pShaderCode;
+	HRESULT hr = CompileShaderToByteCodeD3D9(code, "ps_3_0", errorMessage, &pShaderCode);
+	if (SUCCEEDED(hr)) {
 		// Create pixel shader.
 		device->CreatePixelShader((DWORD*)pShaderCode->GetBufferPointer(), pShader);
-		pShaderCode->Release();
 		return true;
 	} else {
 		return false;
@@ -66,11 +58,11 @@ bool CompilePixelShaderD3D9(LPDIRECT3DDEVICE9 device, const char *code, LPDIRECT
 }
 
 bool CompileVertexShaderD3D9(LPDIRECT3DDEVICE9 device, const char *code, LPDIRECT3DVERTEXSHADER9 *pShader, std::string *errorMessage) {
-	LPD3DBLOB pShaderCode = CompileShaderToByteCodeD3D9(code, "vs_3_0", errorMessage);
-	if (pShaderCode) {
+	ComPtr<ID3DBlob> pShaderCode;
+	HRESULT hr = CompileShaderToByteCodeD3D9(code, "vs_3_0", errorMessage, &pShaderCode);
+	if (SUCCEEDED(hr)) {
 		// Create vertex shader.
 		device->CreateVertexShader((DWORD*)pShaderCode->GetBufferPointer(), pShader);
-		pShaderCode->Release();
 		return true;
 	} else {
 		return false;

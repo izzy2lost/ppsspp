@@ -89,7 +89,7 @@ enum class BlendFactor : uint8_t {
 	ONE_MINUS_SRC1_ALPHA,
 };
 
-enum class StencilOp {
+enum class StencilOp : uint8_t {
 	KEEP = 0,
 	ZERO = 1,
 	REPLACE = 2,
@@ -211,13 +211,14 @@ enum FormatSupport {
 	FMT_STORAGE_IMAGE = 64,
 };
 
-enum InfoField {
+enum class InfoField {
 	APINAME,
 	APIVERSION,
 	VENDORSTRING,
 	VENDOR,
 	SHADELANGVERSION,
 	DRIVER,
+	DEVICE_API_VERSION,  // Vulkan-only
 };
 
 enum class GPUVendor {
@@ -333,7 +334,7 @@ public:
 	uint32_t MaxBugIndex() const {
 		return (uint32_t)MAX_BUG;
 	}
-	const char *GetBugName(uint32_t bug);
+	static const char *GetBugName(uint32_t bug);
 
 	enum : uint32_t {
 		NO_DEPTH_CANNOT_DISCARD_STENCIL_ADRENO = 0,
@@ -450,10 +451,10 @@ public:
 class Framebuffer : public RefCountedObject {
 public:
 	Framebuffer() : RefCountedObject("Framebuffer") {}
-	int Width() { return width_; }
-	int Height() { return height_; }
-	int Layers() { return layers_; }
-	int MultiSampleLevel() { return multiSampleLevel_; }
+	int Width() const { return width_; }
+	int Height() const { return height_; }
+	int Layers() const { return layers_; }
+	int MultiSampleLevel() const { return multiSampleLevel_; }
 
 	virtual void UpdateTag(const char *tag) {}
 protected:
@@ -694,7 +695,7 @@ struct BackendState {
 
 class DrawContext {
 public:
-	virtual ~DrawContext();
+	virtual ~DrawContext() = default;
 	bool CreatePresets();
 	void DestroyPresets();
 

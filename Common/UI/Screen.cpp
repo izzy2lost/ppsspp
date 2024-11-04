@@ -61,7 +61,9 @@ void ScreenManager::switchScreen(Screen *screen) {
 		WARN_LOG(Log::System, "Switching to a zero screen, this can't be good");
 	}
 	if (stack_.empty() || screen != stack_.back().screen) {
-		screen->setScreenManager(this);
+		if (screen) {
+			screen->setScreenManager(this);
+		}
 		nextStack_.push_back({ screen, 0 });
 	}
 }
@@ -77,7 +79,7 @@ void ScreenManager::update() {
 		overlayScreen_->update();
 	}
 	// The background screen doesn't need updating.
-	if (stack_.size()) {
+	if (!stack_.empty()) {
 		stack_.back().screen->update();
 	}
 }
@@ -96,9 +98,7 @@ void ScreenManager::switchToNext() {
 	}
 	stack_.push_back(nextStack_.front());
 	nextStack_.front().screen->focusChanged(ScreenFocusChange::FOCUS_BECAME_TOP);
-	if (temp.screen) {
-		delete temp.screen;
-	}
+	delete temp.screen;
 	UI::SetFocusedView(nullptr);
 
 	// When will this ever happen? Should handle focus here too?
@@ -165,8 +165,8 @@ void ScreenManager::resized() {
 	std::lock_guard<std::recursive_mutex> guard(inputLock_);
 	// Have to notify the whole stack, otherwise there will be problems when going back
 	// to non-top screens.
-	for (auto iter = stack_.begin(); iter != stack_.end(); ++iter) {
-		iter->screen->resized();
+	for (auto &layer : stack_) {
+		layer.screen->resized();
 	}
 }
 
@@ -185,6 +185,7 @@ ScreenRenderFlags ScreenManager::render() {
 		Screen *coveringScreen = nullptr;
 		Screen *foundBackgroundScreen = nullptr;
 		bool first = true;
+
 		do {
 			--iter;
 			ScreenRenderRole role = iter->screen->renderRole(first);
@@ -339,8 +340,8 @@ void ScreenManager::pop() {
 
 void ScreenManager::RecreateAllViews() {
 	std::lock_guard<std::recursive_mutex> guard(inputLock_);
-	for (auto it = stack_.begin(); it != stack_.end(); ++it) {
-		it->screen->RecreateViews();
+	for (auto &layer : stack_) {
+		layer.screen->RecreateViews();
 	}
 }
 
@@ -403,15 +404,11 @@ void ScreenManager::processFinishDialog() {
 }
 
 void ScreenManager::SetBackgroundOverlayScreens(Screen *backgroundScreen, Screen *overlayScreen) {
-	if (backgroundScreen_) {
-		delete backgroundScreen_;
-	}
+	delete backgroundScreen_;
 	backgroundScreen_ = backgroundScreen;
 	backgroundScreen_->setScreenManager(this);
 
-	if (overlayScreen_) {
-		delete overlayScreen_;
-	}
+	delete overlayScreen_;
 	overlayScreen_ = overlayScreen;
 	overlayScreen_->setScreenManager(this);
 }

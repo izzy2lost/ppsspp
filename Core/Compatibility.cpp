@@ -83,6 +83,7 @@ void Compatibility::CheckSettings(IniFile &iniFile, const std::string &gameID) {
 	CheckSetting(iniFile, gameID, "ClearToRAM", &flags_.ClearToRAM);
 	CheckSetting(iniFile, gameID, "Force04154000Download", &flags_.Force04154000Download);
 	CheckSetting(iniFile, gameID, "DrawSyncEatCycles", &flags_.DrawSyncEatCycles);
+	CheckSetting(iniFile, gameID, "DrawSyncInstant", &flags_.DrawSyncInstant);
 	CheckSetting(iniFile, gameID, "FakeMipmapChange", &flags_.FakeMipmapChange);
 	CheckSetting(iniFile, gameID, "RequireBufferedRendering", &flags_.RequireBufferedRendering);
 	CheckSetting(iniFile, gameID, "RequireBlockTransfer", &flags_.RequireBlockTransfer);
@@ -135,10 +136,12 @@ void Compatibility::CheckSettings(IniFile &iniFile, const std::string &gameID) {
 	CheckSetting(iniFile, gameID, "LoadCLUTFromCurrentFrameOnly", &flags_.LoadCLUTFromCurrentFrameOnly);
 	CheckSetting(iniFile, gameID, "ForceUMDReadSpeed", &flags_.ForceUMDReadSpeed);
 	CheckSetting(iniFile, gameID, "AllowDelayedReadbacks", &flags_.AllowDelayedReadbacks);
+	CheckSetting(iniFile, gameID, "KernelGetSystemTimeLowEatMoreCycles", &flags_.KernelGetSystemTimeLowEatMoreCycles);
 	CheckSetting(iniFile, gameID, "TacticsOgreEliminateDebugReadback", &flags_.TacticsOgreEliminateDebugReadback);
 	CheckSetting(iniFile, gameID, "FramebufferAllowLargeVerticalOffset", &flags_.FramebufferAllowLargeVerticalOffset);
 	CheckSetting(iniFile, gameID, "DisableMemcpySlicing", &flags_.DisableMemcpySlicing);
 	CheckSetting(iniFile, gameID, "ForceEnableGPUReadback", &flags_.ForceEnableGPUReadback);
+	CheckSetting(iniFile, gameID, "UseFFMPEGFindStreamInfo", &flags_.UseFFMPEGFindStreamInfo);
 }
 
 void Compatibility::CheckVRSettings(IniFile &iniFile, const std::string &gameID) {

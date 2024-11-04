@@ -148,7 +148,7 @@ public:
 
 class VKRasterState : public RasterState {
 public:
-	VKRasterState(VulkanContext *vulkan, const RasterStateDesc &desc) {
+	VKRasterState(const RasterStateDesc &desc) {
 		cullFace = desc.cull;
 		frontFace = desc.frontFace;
 	}
@@ -187,7 +187,7 @@ public:
 	VKShaderModule(ShaderStage stage, const std::string &tag) : stage_(stage), tag_(tag) {
 		vkstage_ = StageToVulkan(stage);
 	}
-	bool Compile(VulkanContext *vulkan, ShaderLanguage language, const uint8_t *data, size_t size);
+	bool Compile(VulkanContext *vulkan, const uint8_t *data, size_t size);
 	const std::string &GetSource() const { return source_; }
 	~VKShaderModule() {
 		if (module_) {
@@ -214,7 +214,7 @@ private:
 	std::string tag_;
 };
 
-bool VKShaderModule::Compile(VulkanContext *vulkan, ShaderLanguage language, const uint8_t *data, size_t size) {
+bool VKShaderModule::Compile(VulkanContext *vulkan, const uint8_t *data, size_t size) {
 	// We'll need this to free it later.
 	vulkan_ = vulkan;
 	source_ = (const char *)data;
@@ -327,7 +327,7 @@ struct DescriptorSetKey {
 
 class VKTexture : public Texture {
 public:
-	VKTexture(VulkanContext *vulkan, VkCommandBuffer cmd, VulkanPushPool *pushBuffer, const TextureDesc &desc)
+	VKTexture(VulkanContext *vulkan, const TextureDesc &desc)
 		: vulkan_(vulkan), mipLevels_(desc.mipLevels) {
 		format_ = desc.format;
 	}
@@ -383,7 +383,7 @@ public:
 	BackendState GetCurrentBackendState() const override {
 		return BackendState{
 			(u32)renderManager_.GetNumSteps(),
-			true,
+			true,  // Means that the other value is meaningful.
 		};
 	}
 
@@ -398,7 +398,7 @@ public:
 	std::vector<std::string> GetDeviceList() const override {
 		std::vector<std::string> list;
 		for (int i = 0; i < vulkan_->GetNumPhysicalDevices(); i++) {
-			list.push_back(vulkan_->GetPhysicalDeviceProperties(i).properties.deviceName);
+			list.emplace_back(vulkan_->GetPhysicalDeviceProperties(i).properties.deviceName);
 		}
 		return list;
 	}
@@ -522,16 +522,13 @@ public:
 	std::string GetInfoString(InfoField info) const override {
 		// TODO: Make these actually query the right information
 		switch (info) {
-		case APINAME: return "Vulkan";
-		case VENDORSTRING: return vulkan_->GetPhysicalDeviceProperties().properties.deviceName;
-		case VENDOR: return VulkanVendorString(vulkan_->GetPhysicalDeviceProperties().properties.vendorID);
-		case DRIVER: return FormatDriverVersion(vulkan_->GetPhysicalDeviceProperties().properties);
-		case SHADELANGVERSION: return "N/A";;
-		case APIVERSION: 
-		{
-			uint32_t ver = vulkan_->GetPhysicalDeviceProperties().properties.apiVersion;
-			return StringFromFormat("%d.%d.%d", ver >> 22, (ver >> 12) & 0x3ff, ver & 0xfff);
-		}
+		case InfoField::APINAME: return "Vulkan";
+		case InfoField::VENDORSTRING: return vulkan_->GetPhysicalDeviceProperties().properties.deviceName;
+		case InfoField::VENDOR: return VulkanVendorString(vulkan_->GetPhysicalDeviceProperties().properties.vendorID);
+		case InfoField::DRIVER: return FormatDriverVersion(vulkan_->GetPhysicalDeviceProperties().properties);
+		case InfoField::SHADELANGVERSION: return "N/A";;
+		case InfoField::APIVERSION: return FormatAPIVersion(vulkan_->InstanceApiVersion());
+		case InfoField::DEVICE_API_VERSION: return FormatAPIVersion(vulkan_->DeviceApiVersion());
 		default: return "?";
 		}
 	}
@@ -760,7 +757,7 @@ SamplerState *VKContext::CreateSamplerState(const SamplerStateDesc &desc) {
 }
 
 RasterState *VKContext::CreateRasterState(const RasterStateDesc &desc) {
-	return new VKRasterState(vulkan_, desc);
+	return new VKRasterState(desc);
 }
 
 void VKContext::BindSamplerStates(int start, int count, SamplerState **state) {
@@ -880,7 +877,7 @@ VKContext::VKContext(VulkanContext *vulkan, bool useRenderThread)
 	: vulkan_(vulkan), renderManager_(vulkan, useRenderThread, frameTimeHistory_) {
 	shaderLanguageDesc_.Init(GLSL_VULKAN);
 
-	VkFormat depthStencilFormat = vulkan->GetDeviceInfo().preferredDepthStencilFormat;
+	INFO_LOG(Log::G3D, "Determining Vulkan device caps");
 
 	caps_.setMaxFrameLatencySupported = true;
 	caps_.anisoSupported = vulkan->GetDeviceFeatures().enabled.standard.samplerAnisotropy != 0;
@@ -980,8 +977,10 @@ VKContext::VKContext(VulkanContext *vulkan, bool useRenderThread)
     caps_.deviceID = deviceProps.deviceID;
 
     if (caps_.vendor == GPUVendor::VENDOR_QUALCOMM) {
-		// if (caps_.deviceID < 0x6000000)  // On sub 6xx series GPUs, disallow multisample.
-		multisampleAllowed = false;  // Actually, let's disable it on them all for now. See issue #18818.
+		if (caps_.deviceID < 0x6000000) { // On sub 6xx series GPUs, disallow multisample.
+			INFO_LOG(Log::G3D, "Multisampling was disabled due to old driver version (Adreno)");
+			multisampleAllowed = false;
+		}
 
 		// Adreno 5xx devices, all known driver versions, fail to discard stencil when depth write is off.
 		// See: https://github.com/hrydgard/ppsspp/pull/11684
@@ -1055,6 +1054,14 @@ VKContext::VKContext(VulkanContext *vulkan, bool useRenderThread)
 
 	if (!vulkan->Extensions().KHR_depth_stencil_resolve) {
 		INFO_LOG(Log::G3D, "KHR_depth_stencil_resolve not supported, disabling multisampling");
+		multisampleAllowed = false;
+	}
+
+	if (!vulkan->Extensions().KHR_create_renderpass2) {
+		WARN_LOG(Log::G3D, "KHR_create_renderpass2 not supported, disabling multisampling");
+		multisampleAllowed = false;
+	} else {
+		_dbg_assert_(vkCreateRenderPass2 != nullptr);
 	}
 
 	// We limit multisampling functionality to reasonably recent and known-good tiling GPUs.
@@ -1067,7 +1074,8 @@ VKContext::VKContext(VulkanContext *vulkan, bool useRenderThread)
 			caps_.multiSampleLevelsMask = (limits.framebufferColorSampleCounts & limits.framebufferDepthSampleCounts & limits.framebufferStencilSampleCounts);
 			INFO_LOG(Log::G3D, "Multisample levels mask: %d", caps_.multiSampleLevelsMask);
 		} else {
-			INFO_LOG(Log::G3D, "Not enough depth/stencil resolve modes supported, disabling multisampling.");
+			INFO_LOG(Log::G3D, "Not enough depth/stencil resolve modes supported, disabling multisampling. Color: %d Depth: %d Stencil: %d",
+				limits.framebufferColorSampleCounts, limits.framebufferDepthSampleCounts, limits.framebufferStencilSampleCounts);
 			caps_.multiSampleLevelsMask = 1;
 		}
 	} else {
@@ -1150,7 +1158,6 @@ void VKContext::BindDescriptors(VkBuffer buf, PackedDescriptor descriptors[4]) {
 	descriptors[0].buffer.offset = 0;  // dynamic
 	descriptors[0].buffer.range = curPipeline_->GetUBOSize();
 
-	int numDescs = 1;
 	for (int i = 0; i < MAX_BOUND_TEXTURES; ++i) {
 		VkImageView view;
 		VkSampler sampler;
@@ -1242,7 +1249,6 @@ Pipeline *VKContext::CreateGraphicsPipeline(const PipelineDesc &desc, const char
 
 	gDesc.pipelineLayout = pipelineLayout_;
 
-	VkPipelineRasterizationStateCreateInfo rs{ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
 	raster->ToVulkan(&gDesc.rs);
 
 	if (renderManager_.GetVulkanContext()->GetDeviceFeatures().enabled.provokingVertex.provokingVertexLast) {
@@ -1318,7 +1324,7 @@ Texture *VKContext::CreateTexture(const TextureDesc &desc) {
 		ERROR_LOG(Log::G3D,  "Can't create textures before the first frame has started.");
 		return nullptr;
 	}
-	VKTexture *tex = new VKTexture(vulkan_, initCmd, push_, desc);
+	VKTexture *tex = new VKTexture(vulkan_, desc);
 	if (tex->Create(initCmd, &renderManager_.PostInitBarrier(), push_, desc)) {
 		return tex;
 	} else {
@@ -1386,7 +1392,7 @@ BlendState *VKContext::CreateBlendState(const BlendStateDesc &desc) {
 // to avoid synchronization issues.
 class VKBuffer : public Buffer {
 public:
-	VKBuffer(size_t size, uint32_t flags) : dataSize_(size) {
+	VKBuffer(size_t size) : dataSize_(size) {
 		data_ = new uint8_t[size];
 	}
 	~VKBuffer() {
@@ -1401,7 +1407,7 @@ public:
 };
 
 Buffer *VKContext::CreateBuffer(size_t size, uint32_t usageFlags) {
-	return new VKBuffer(size, usageFlags);
+	return new VKBuffer(size);
 }
 
 void VKContext::UpdateBuffer(Buffer *buffer, const uint8_t *data, size_t offset, size_t size, UpdateBufferFlags flags) {
@@ -1441,7 +1447,7 @@ void VKContext::BindNativeTexture(int sampler, void *nativeTexture) {
 
 ShaderModule *VKContext::CreateShaderModule(ShaderStage stage, ShaderLanguage language, const uint8_t *data, size_t size, const char *tag) {
 	VKShaderModule *shader = new VKShaderModule(stage, tag);
-	if (shader->Compile(vulkan_, language, data, size)) {
+	if (shader->Compile(vulkan_, data, size)) {
 		return shader;
 	} else {
 		ERROR_LOG(Log::G3D, "Failed to compile shader %s:\n%s", tag, (const char *)LineNumberString((const char *)data).c_str());
@@ -1656,8 +1662,7 @@ Framebuffer *VKContext::CreateFramebuffer(const FramebufferDesc &desc) {
 	_assert_(desc.width > 0);
 	_assert_(desc.height > 0);
 
-	VkCommandBuffer cmd = renderManager_.GetInitCmd();
-	VKRFramebuffer *vkrfb = new VKRFramebuffer(vulkan_, &renderManager_.PostInitBarrier(), cmd, renderManager_.GetQueueRunner()->GetCompatibleRenderPass(), desc.width, desc.height, desc.numLayers, desc.multiSampleLevel, desc.z_stencil, desc.tag);
+	VKRFramebuffer *vkrfb = new VKRFramebuffer(vulkan_, &renderManager_.PostInitBarrier(), desc.width, desc.height, desc.numLayers, desc.multiSampleLevel, desc.z_stencil, desc.tag);
 	return new VKFramebuffer(vkrfb, desc.multiSampleLevel);
 }
 

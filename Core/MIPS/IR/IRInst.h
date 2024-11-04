@@ -237,6 +237,9 @@ enum class IROp : uint8_t {
 	ValidateAddress32,
 	ValidateAddress128,
 
+	// Tracing support.
+	LogIRBlock,
+
 	Nop,
 	Bad,
 };
@@ -376,7 +379,7 @@ public:
 		insts_ = w.insts_;
 		return *this;
 	}
-	IRWriter &operator =(IRWriter &&w) {
+	IRWriter &operator =(IRWriter &&w) noexcept {
 		insts_ = std::move(w.insts_);
 		return *this;
 	}

@@ -20,11 +20,11 @@ static void MergeRenderAreaRectInto(VkRect2D *dest, const VkRect2D &src) {
 		dest->extent.height += (dest->offset.y - src.offset.y);
 		dest->offset.y = src.offset.y;
 	}
-	if (dest->extent.width < src.extent.width) {
-		dest->extent.width = src.extent.width;
+	if (dest->offset.x + dest->extent.width < src.offset.x + src.extent.width) {
+		dest->extent.width = src.offset.x + src.extent.width - dest->offset.x;
 	}
-	if (dest->extent.height < src.extent.height) {
-		dest->extent.height = src.extent.height;
+	if (dest->offset.y + dest->extent.height < src.offset.y + src.extent.height) {
+		dest->extent.height = src.offset.y + src.extent.height - dest->offset.y;
 	}
 }
 
@@ -73,7 +73,7 @@ void VulkanQueueRunner::DestroyDeviceObjects() {
 	syncReadback_.Destroy(vulkan_);
 
 	renderPasses_.IterateMut([&](const RPKey &rpkey, VKRRenderPass *rp) {
-		_assert_(rp);
+		_dbg_assert_(rp);
 		rp->Destroy(vulkan_);
 		delete rp;
 	});
@@ -488,18 +488,24 @@ void VulkanQueueRunner::ApplyMGSHack(std::vector<VKRStep *> &steps) {
 			for (int j = 0; j < (int)copies.size(); j++) {
 				steps[i + j] = copies[j];
 			}
+
+			const int firstRender = i + (int)copies.size();
+
 			// Write the renders back (so they will be deleted properly).
 			for (int j = 0; j < (int)renders.size(); j++) {
-				steps[i + j + copies.size()] = renders[j];
+				steps[firstRender + j] = renders[j];
 			}
-			_assert_(steps[i + copies.size()]->stepType == VKRStepType::RENDER);
+			_assert_(steps[firstRender]->stepType == VKRStepType::RENDER);
 			// Combine the renders.
 			for (int j = 1; j < (int)renders.size(); j++) {
-				steps[i + copies.size()]->commands.reserve(renders[j]->commands.size());
+				steps[firstRender]->commands.reserve(renders[j]->commands.size());
 				for (int k = 0; k < (int)renders[j]->commands.size(); k++) {
-					steps[i + copies.size()]->commands.push_back(renders[j]->commands[k]);
+					steps[firstRender]->commands.push_back(renders[j]->commands[k]);
 				}
-				steps[i + copies.size() + j]->stepType = VKRStepType::RENDER_SKIP;
+				MergeRenderAreaRectInto(&steps[firstRender]->render.renderArea, renders[j]->render.renderArea);
+				// Easier than removing them from the list, though that might be the better option.
+				steps[firstRender + j]->stepType = VKRStepType::RENDER_SKIP;
+				steps[firstRender + j]->commands.clear();
 			}
 			// We're done.
 			break;
@@ -560,6 +566,7 @@ void VulkanQueueRunner::ApplyMGSHack(std::vector<VKRStep *> &steps) {
 					break;
 				}
 			}
+			MergeRenderAreaRectInto(&steps[i]->render.renderArea, steps[j]->render.renderArea);
 			steps[j]->stepType = VKRStepType::RENDER_SKIP;
 		}
 
@@ -575,6 +582,7 @@ void VulkanQueueRunner::ApplyMGSHack(std::vector<VKRStep *> &steps) {
 					break;
 				}
 			}
+			MergeRenderAreaRectInto(&steps[i + 1]->render.renderArea, steps[j]->render.renderArea);
 			steps[j]->stepType = VKRStepType::RENDER_SKIP;
 		}
 
@@ -656,7 +664,8 @@ void VulkanQueueRunner::ApplySonicHack(std::vector<VKRStep *> &steps) {
 				for (int k = 0; k < (int)type2[j]->commands.size(); k++) {
 					steps[i + type1.size()]->commands.push_back(type2[j]->commands[k]);
 				}
-				steps[i + j + type1.size()]->stepType = VKRStepType::RENDER_SKIP;
+				// Technically, should merge render area here, but they're all the same so not needed.
+				steps[i + type1.size() + j]->stepType = VKRStepType::RENDER_SKIP;
 			}
 			// We're done.
 			break;
@@ -1052,17 +1061,21 @@ void VulkanQueueRunner::PerformRenderPass(const VKRStep &step, VkCommandBuffer c
 						"expected %d sample count, got %d", fbSampleCount, graphicsPipeline->SampleCount());
 				}
 
-				if (!graphicsPipeline->pipeline[(size_t)rpType]) {
-					// NOTE: If render steps got merged, it can happen that, as they ended during recording,
-					// they didn't know their final render pass type so they created the wrong pipelines in EndCurRenderStep().
-					// Unfortunately I don't know if we can fix it in any more sensible place than here.
-					// Maybe a middle pass. But let's try to just block and compile here for now, this doesn't
-					// happen all that much.
-					graphicsPipeline->pipeline[(size_t)rpType] = Promise<VkPipeline>::CreateEmpty();
-					graphicsPipeline->Create(vulkan_, renderPass->Get(vulkan_, rpType, fbSampleCount), rpType, fbSampleCount, time_now_d(), -1);
-				}
+				VkPipeline pipeline;
 
-				VkPipeline pipeline = graphicsPipeline->pipeline[(size_t)rpType]->BlockUntilReady();
+				{
+					std::lock_guard<std::mutex> lock(graphicsPipeline->mutex_);
+					if (!graphicsPipeline->pipeline[(size_t)rpType]) {
+						// NOTE: If render steps got merged, it can happen that, as they ended during recording,
+						// they didn't know their final render pass type so they created the wrong pipelines in EndCurRenderStep().
+						// Unfortunately I don't know if we can fix it in any more sensible place than here.
+						// Maybe a middle pass. But let's try to just block and compile here for now, this doesn't
+						// happen all that much.
+						graphicsPipeline->pipeline[(size_t)rpType] = Promise<VkPipeline>::CreateEmpty();
+						graphicsPipeline->Create(vulkan_, renderPass->Get(vulkan_, rpType, fbSampleCount), rpType, fbSampleCount, time_now_d(), -1);
+					}
+					pipeline = graphicsPipeline->pipeline[(size_t)rpType]->BlockUntilReady();
+				}
 
 				if (pipeline != VK_NULL_HANDLE) {
 					vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);

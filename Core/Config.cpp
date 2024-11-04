@@ -123,7 +123,7 @@ const char *DefaultLangRegion() {
 		std::vector<std::string> keys;
 		mapping.GetKeys("LangRegionNames", keys);
 
-		for (std::string key : keys) {
+		for (const std::string &key : keys) {
 			if (startsWithNoCase(key, langRegion)) {
 				// Exact submatch, or different case.  Let's use it.
 				defaultLangRegion = key;
@@ -209,7 +209,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("CheckForNewVersion", &g_Config.bCheckForNewVersion, true, CfgFlag::DEFAULT),
 	ConfigSetting("Language", &g_Config.sLanguageIni, &DefaultLangRegion, CfgFlag::DEFAULT),
 	ConfigSetting("ForceLagSync2", &g_Config.bForceLagSync, false, CfgFlag::PER_GAME),
-	ConfigSetting("DiscordPresence", &g_Config.bDiscordPresence, true, CfgFlag::DEFAULT),  // Or maybe it makes sense to have it per-game? Race conditions abound...
+	ConfigSetting("DiscordRichPresence", &g_Config.bDiscordRichPresence, false, CfgFlag::DEFAULT),
 	ConfigSetting("UISound", &g_Config.bUISound, false, CfgFlag::DEFAULT),
 
 	ConfigSetting("DisableHTTPS", &g_Config.bDisableHTTPS, false, CfgFlag::DONT_SAVE),
@@ -303,7 +303,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("ShowMenuBar", &g_Config.bShowMenuBar, true, CfgFlag::DEFAULT),
 
 	ConfigSetting("MemStickInserted", &g_Config.bMemStickInserted, true, CfgFlag::PER_GAME | CfgFlag::REPORT),
-	ConfigSetting("EnablePlugins", &g_Config.bLoadPlugins, true, CfgFlag::PER_GAME),
+	ConfigSetting("LoadPlugins", &g_Config.bLoadPlugins, true, CfgFlag::PER_GAME),
 
 	ConfigSetting("IgnoreCompatSettings", &g_Config.sIgnoreCompatSettings, "", CfgFlag::PER_GAME | CfgFlag::REPORT),
 
@@ -423,7 +423,7 @@ static int DefaultGPUBackend() {
 
 #if PPSSPP_PLATFORM(WINDOWS)
 	// If no Vulkan, use Direct3D 11 on Windows 8+ (most importantly 10.)
-	if (DoesVersionMatchWindows(6, 2, 0, 0, true)) {
+	if (IsWin8OrHigher()) {
 		return (int)GPUBackend::DIRECT3D11;
 	}
 #elif PPSSPP_PLATFORM(ANDROID)
@@ -448,13 +448,18 @@ static int DefaultGPUBackend() {
 		return (int)GPUBackend::VULKAN;
 	}
 #endif
+
 #elif PPSSPP_PLATFORM(MAC)
+
 #if PPSSPP_ARCH(ARM64)
 	return (int)GPUBackend::VULKAN;
 #else
 	// On Intel (generally older Macs) default to OpenGL.
 	return (int)GPUBackend::OPENGL;
 #endif
+
+#elif PPSSPP_PLATFORM(IOS_APP_STORE)
+	return (int)GPUBackend::VULKAN;
 #endif
 
 	// TODO: On some additional Linux platforms, we should also default to Vulkan.
@@ -489,7 +494,7 @@ int Config::NextValidBackend() {
 		}
 #endif
 #if PPSSPP_PLATFORM(WINDOWS)
-		if (!failed.count(GPUBackend::DIRECT3D11) && DoesVersionMatchWindows(6, 1, 0, 0, true)) {
+		if (!failed.count(GPUBackend::DIRECT3D11) && IsWin7OrHigher()) {
 			return (int)GPUBackend::DIRECT3D11;
 		}
 #endif
@@ -536,7 +541,7 @@ bool Config::IsBackendEnabled(GPUBackend backend) {
 	if (backend != GPUBackend::OPENGL)
 		return false;
 #elif PPSSPP_PLATFORM(WINDOWS)
-	if (backend == GPUBackend::DIRECT3D11 && !DoesVersionMatchWindows(6, 0, 0, 0, true))
+	if (backend == GPUBackend::DIRECT3D11 && !IsVistaOrHigher())
 		return false;
 #else
 	if (backend == GPUBackend::DIRECT3D11 || backend == GPUBackend::DIRECT3D9)
@@ -709,25 +714,27 @@ static const ConfigSetting soundSettings[] = {
 	ConfigSetting("AutoAudioDevice", &g_Config.bAutoAudioDevice, true, CfgFlag::DEFAULT),
 	ConfigSetting("AudioMixWithOthers", &g_Config.bAudioMixWithOthers, true, CfgFlag::DEFAULT),
 	ConfigSetting("AudioRespectSilentMode", &g_Config.bAudioRespectSilentMode, false, CfgFlag::DEFAULT),
-	ConfigSetting("UseNewAtrac", &g_Config.bUseNewAtrac, false, CfgFlag::DEFAULT),
+	ConfigSetting("UseExperimentalAtrac", &g_Config.bUseExperimentalAtrac, false, CfgFlag::DONT_SAVE),
 };
 
 static bool DefaultShowTouchControls() {
-	int deviceType = System_GetPropertyInt(SYSPROP_DEVICE_TYPE);
-	if (deviceType == DEVICE_TYPE_MOBILE) {
-		std::string name = System_GetProperty(SYSPROP_NAME);
-		if (KeyMap::HasBuiltinController(name)) {
-			return false;
-		} else {
-			return true;
-		}
-	} else if (deviceType == DEVICE_TYPE_TV) {
+	switch (System_GetPropertyInt(SYSPROP_DEVICE_TYPE)) {
+	case DEVICE_TYPE_MOBILE:
+		return !KeyMap::HasBuiltinController(System_GetProperty(SYSPROP_NAME));
+	default:
 		return false;
-	} else if (deviceType == DEVICE_TYPE_DESKTOP) {
+	}
+}
+
+static bool DefaultShowPauseButton() {
+	switch (System_GetPropertyInt(SYSPROP_DEVICE_TYPE)) {
+	case DEVICE_TYPE_MOBILE:
+	case DEVICE_TYPE_DESKTOP:
+		return true;
+	case DEVICE_TYPE_VR:
+	case DEVICE_TYPE_TV:
 		return false;
-	} else if (deviceType == DEVICE_TYPE_VR) {
-		return false;
-	} else {
+	default:
 		return false;
 	}
 }
@@ -785,13 +792,9 @@ static const ConfigSetting controlSettings[] = {
 	ConfigSetting("fcombo18X", "fcombo18Y", "comboKeyScale18", "ShowComboKey18", &g_Config.touchCustom[18], defaultTouchPosHide, CfgFlag::PER_GAME),
 	ConfigSetting("fcombo19X", "fcombo19Y", "comboKeyScale19", "ShowComboKey19", &g_Config.touchCustom[19], defaultTouchPosHide, CfgFlag::PER_GAME),
 
-#if defined(_WIN32)
 	// A win32 user seeing touch controls is likely using PPSSPP on a tablet. There it makes
 	// sense to default this to on.
-	ConfigSetting("ShowTouchPause", &g_Config.bShowTouchPause, true, CfgFlag::DEFAULT),
-#else
-	ConfigSetting("ShowTouchPause", &g_Config.bShowTouchPause, false, CfgFlag::DEFAULT),
-#endif
+	ConfigSetting("ShowTouchPause", &g_Config.bShowTouchPause, &DefaultShowPauseButton, CfgFlag::DEFAULT),
 #if defined(USING_WIN_UI)
 	ConfigSetting("IgnoreWindowsKey", &g_Config.bIgnoreWindowsKey, false, CfgFlag::PER_GAME),
 #endif
@@ -954,25 +957,22 @@ static const ConfigSetting themeSettings[] = {
 
 static const ConfigSetting vrSettings[] = {
 	ConfigSetting("VREnable", &g_Config.bEnableVR, true, CfgFlag::PER_GAME),
-	ConfigSetting("VREnable6DoF", &g_Config.bEnable6DoF, true, CfgFlag::PER_GAME),
+	ConfigSetting("VREnable6DoF", &g_Config.bEnable6DoF, false, CfgFlag::PER_GAME),
 	ConfigSetting("VREnableStereo", &g_Config.bEnableStereo, false, CfgFlag::PER_GAME),
-	ConfigSetting("VREnableMotions", &g_Config.bEnableMotions, true, CfgFlag::PER_GAME),
 	ConfigSetting("VRForce72Hz", &g_Config.bForce72Hz, true, CfgFlag::PER_GAME),
+	ConfigSetting("VRForce", &g_Config.bForceVR, false, CfgFlag::DEFAULT),
+	ConfigSetting("VRImmersiveMode", &g_Config.bEnableImmersiveVR, true, CfgFlag::PER_GAME),
 	ConfigSetting("VRManualForceVR", &g_Config.bManualForceVR, false, CfgFlag::PER_GAME),
 	ConfigSetting("VRPassthrough", &g_Config.bPassthrough, false, CfgFlag::PER_GAME),
 	ConfigSetting("VRRescaleHUD", &g_Config.bRescaleHUD, true, CfgFlag::PER_GAME),
 	ConfigSetting("VRCameraDistance", &g_Config.fCameraDistance, 0.0f, CfgFlag::PER_GAME),
 	ConfigSetting("VRCameraHeight", &g_Config.fCameraHeight, 0.0f, CfgFlag::PER_GAME),
 	ConfigSetting("VRCameraSide", &g_Config.fCameraSide, 0.0f, CfgFlag::PER_GAME),
-	ConfigSetting("VRCameraPitch", &g_Config.iCameraPitch, 0, CfgFlag::PER_GAME),
+	ConfigSetting("VRCameraPitch", &g_Config.fCameraPitch, 0.0f, CfgFlag::PER_GAME),
 	ConfigSetting("VRCanvasDistance", &g_Config.fCanvasDistance, 12.0f, CfgFlag::DEFAULT),
 	ConfigSetting("VRCanvas3DDistance", &g_Config.fCanvas3DDistance, 3.0f, CfgFlag::DEFAULT),
 	ConfigSetting("VRFieldOfView", &g_Config.fFieldOfViewPercentage, 100.0f, CfgFlag::PER_GAME),
 	ConfigSetting("VRHeadUpDisplayScale", &g_Config.fHeadUpDisplayScale, 0.3f, CfgFlag::PER_GAME),
-	ConfigSetting("VRMotionLength", &g_Config.fMotionLength, 0.5f, CfgFlag::DEFAULT),
-	ConfigSetting("VRHeadRotationScale", &g_Config.fHeadRotationScale, 5.0f, CfgFlag::PER_GAME),
-	ConfigSetting("VRHeadRotationEnabled", &g_Config.bHeadRotationEnabled, false, CfgFlag::PER_GAME),
-	ConfigSetting("VRHeadRotationSmoothing", &g_Config.bHeadRotationSmoothing, false, CfgFlag::PER_GAME),
 };
 
 static const ConfigSectionSettings sections[] = {
@@ -1061,9 +1061,9 @@ void Config::LoadLangValuesMapping() {
 
 	for (size_t i = 0; i < keys.size(); i++) {
 		std::string langName;
-		langRegionNames->Get(keys[i].c_str(), &langName, "ERROR");
+		langRegionNames->Get(keys[i], &langName, "ERROR");
 		std::string langCode;
-		systemLanguage->Get(keys[i].c_str(), &langCode, "ENGLISH");
+		systemLanguage->Get(keys[i], &langCode, "ENGLISH");
 		int iLangCode = PSP_SYSTEMPARAM_LANGUAGE_ENGLISH;
 		if (langCodeMapping.find(langCode) != langCodeMapping.end())
 			iLangCode = langCodeMapping[langCode];
@@ -1207,9 +1207,9 @@ void Config::Load(const char *iniFileName, const char *controllerIniFilename) {
 
 	auto pinnedPaths = iniFile.GetOrCreateSection("PinnedPaths")->ToMap();
 	vPinnedPaths.clear();
-	for (auto it = pinnedPaths.begin(), end = pinnedPaths.end(); it != end; ++it) {
+	for (const auto &[_, value] : pinnedPaths) {
 		// Unpin paths that are deleted automatically.
-		const std::string &path = it->second;
+		const std::string &path = value;
 		if (startsWith(path, "http://") || startsWith(path, "https://") || File::Exists(Path(path))) {
 			vPinnedPaths.push_back(File::ResolvePath(path));
 		}
@@ -1229,8 +1229,8 @@ void Config::Load(const char *iniFileName, const char *controllerIniFilename) {
 
 	// Load post process shader values
 	mPostShaderSetting.clear();
-	for (const auto& it : postShaderSetting->ToMap()) {
-		mPostShaderSetting[it.first] = std::stof(it.second);
+	for (const auto &[key, value] : postShaderSetting->ToMap()) {
+		mPostShaderSetting[key] = std::stof(value);
 	}
 
 	// Load post process shader names
@@ -1353,8 +1353,8 @@ bool Config::Save(const char *saveReason) {
 		if (!bGameSpecific) {
 			Section *postShaderSetting = iniFile.GetOrCreateSection("PostShaderSetting");
 			postShaderSetting->Clear();
-			for (auto it = mPostShaderSetting.begin(), end = mPostShaderSetting.end(); it != end; ++it) {
-				postShaderSetting->Set(it->first.c_str(), it->second);
+			for (const auto &[k, v] : mPostShaderSetting) {
+				postShaderSetting->Set(k, v);
 			}
 			Section *postShaderChain = iniFile.GetOrCreateSection("PostShaderList");
 			postShaderChain->Clear();
@@ -1769,8 +1769,8 @@ bool Config::saveGameConfig(const std::string &pGameId, const std::string &title
 
 	Section *postShaderSetting = iniFile.GetOrCreateSection("PostShaderSetting");
 	postShaderSetting->Clear();
-	for (auto it = mPostShaderSetting.begin(), end = mPostShaderSetting.end(); it != end; ++it) {
-		postShaderSetting->Set(it->first.c_str(), it->second);
+	for (const auto &[k, v] : mPostShaderSetting) {
+		postShaderSetting->Set(k, v);
 	}
 
 	Section *postShaderChain = iniFile.GetOrCreateSection("PostShaderList");
@@ -1802,20 +1802,20 @@ bool Config::loadGameConfig(const std::string &pGameId, const std::string &title
 
 	auto postShaderSetting = iniFile.GetOrCreateSection("PostShaderSetting")->ToMap();
 	mPostShaderSetting.clear();
-	for (const auto &it : postShaderSetting) {
+	for (const auto &[k, v] : postShaderSetting) {
 		float value = 0.0f;
-		if (sscanf(it.second.c_str(), "%f", &value)) {
-			mPostShaderSetting[it.first] = value;
+		if (sscanf(v.c_str(), "%f", &value)) {
+			mPostShaderSetting[k] = value;
 		} else {
-			WARN_LOG(Log::Loader, "Invalid float value string for param %s: '%s'", it.first.c_str(), it.second.c_str());
+			WARN_LOG(Log::Loader, "Invalid float value string for param %s: '%s'", k.c_str(), v.c_str());
 		}
 	}
 
 	auto postShaderChain = iniFile.GetOrCreateSection("PostShaderList")->ToMap();
 	vPostShaderNames.clear();
-	for (auto it : postShaderChain) {
-		if (it.second != "Off")
-			vPostShaderNames.push_back(it.second);
+	for (const auto &[_, v] : postShaderChain) {
+		if (v != "Off")
+			vPostShaderNames.push_back(v);
 	}
 
 	IterateSettings(iniFile, [](Section *section, const ConfigSetting &setting) {
@@ -1853,15 +1853,15 @@ void Config::unloadGameConfig() {
 
 		auto postShaderSetting = iniFile.GetOrCreateSection("PostShaderSetting")->ToMap();
 		mPostShaderSetting.clear();
-		for (auto it : postShaderSetting) {
-			mPostShaderSetting[it.first] = std::stof(it.second);
+		for (const auto &[k, v] : postShaderSetting) {
+			mPostShaderSetting[k] = std::stof(v);
 		}
 
 		auto postShaderChain = iniFile.GetOrCreateSection("PostShaderList")->ToMap();
 		vPostShaderNames.clear();
-		for (auto it : postShaderChain) {
-			if (it.second != "Off")
-				vPostShaderNames.push_back(it.second);
+		for (const auto &[k, v] : postShaderChain) {
+			if (v != "Off")
+				vPostShaderNames.push_back(v);
 		}
 
 		LoadStandardControllerIni();
@@ -1985,15 +1985,15 @@ void PlayTimeTracker::Load(const Section *section) {
 		// Parse the string.
 		PlayTime gameTime{};
 		if (2 == sscanf(value.c_str(), "%d,%llu", &gameTime.totalTimePlayed, (long long *)&gameTime.lastTimePlayed)) {
-			tracker_[iter.first.c_str()] = gameTime;
+			tracker_[iter.first] = gameTime;
 		}
 	}
 }
 
 void PlayTimeTracker::Save(Section *section) {
-	for (auto iter : tracker_) {
+	for (auto &iter : tracker_) {
 		std::string formatted = StringFromFormat("%d,%llu", iter.second.totalTimePlayed, iter.second.lastTimePlayed);
-		section->Set(iter.first.c_str(), formatted);
+		section->Set(iter.first, formatted);
 	}
 }
 

@@ -95,13 +95,13 @@ struct GLRRenderData {
 			GLenum func;
 		} depth;
 		struct {
-			GLboolean enabled;
 			GLenum func;
-			uint8_t ref;
-			uint8_t compareMask;
 			GLenum sFail;
 			GLenum zFail;
 			GLenum pass;
+			GLboolean enabled;
+			uint8_t ref;
+			uint8_t compareMask;
 			uint8_t writeMask;
 		} stencil;
 		struct {
@@ -160,8 +160,8 @@ struct GLRRenderData {
 			uint8_t *data;  // owned, delete[]-d
 		} texture_subimage;
 		struct {
+			GLRFramebuffer* framebuffer;
 			int slot;
-			GLRFramebuffer *framebuffer;
 			int aspect;
 		} bind_fb_texture;
 		struct {
@@ -192,9 +192,9 @@ struct GLRRenderData {
 			GLRect2D rc;
 		} scissor;
 		struct {
-			GLboolean cullEnable;
 			GLenum frontFace;
 			GLenum cullFace;
+			GLboolean cullEnable;
 			GLboolean ditherEnable;
 			GLboolean depthClampEnable;
 		} raster;
@@ -326,9 +326,9 @@ struct GLRStep {
 			GLboolean filter;
 		} blit;
 		struct {
-			int aspectMask;
-			GLRFramebuffer *src;
+			GLRFramebuffer* src;
 			GLRect2D srcRect;
+			int aspectMask;
 			Draw::DataFormat dstFormat;
 		} readback;
 		struct {
@@ -385,7 +385,7 @@ private:
 	void PerformReadback(const GLRStep &pass);
 	void PerformReadbackImage(const GLRStep &pass);
 
-	void fbo_ext_create(const GLRInitStep &step);
+	void fbo_ext_create(const GLRInitStep &step);  // Unused on some platforms
 	void fbo_bind_fb_target(bool read, GLuint name);
 	GLenum fbo_get_fb_target(bool read, GLuint **cached);
 	void fbo_unbind();

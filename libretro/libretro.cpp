@@ -651,6 +651,14 @@ static void check_variables(CoreParameter &coreParam)
          g_Config.bAnalogIsCircular = true;
    }
 
+   var.key = "ppsspp_analog_deadzone";
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+      g_Config.fAnalogDeadzone = atof(var.value);
+
+   var.key = "ppsspp_analog_sensitivity";
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+      g_Config.fAnalogSensitivity = atof(var.value);
+   
    var.key = "ppsspp_memstick_inserted";
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
@@ -1195,6 +1203,8 @@ static const struct retro_controller_info ports[] =
 
 void retro_init(void)
 {
+   TimeInit();
+
    struct retro_log_callback log;
    if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
    {
@@ -1262,7 +1272,7 @@ void retro_init(void)
    g_Config.flash0Directory = retro_base_dir / "flash0";
    g_Config.internalDataDirectory = retro_base_dir;
    g_Config.bEnableNetworkChat = false;
-   g_Config.bDiscordPresence = false;
+   g_Config.bDiscordRichPresence = false;
 
    g_VFS.Register("", new DirectoryReader(retro_base_dir));
 
@@ -1960,7 +1970,7 @@ bool System_AudioRecordingState() { return false; }
 #endif
 
 // TODO: To avoid having to define these here, these should probably be turned into system "requests".
-bool NativeSaveSecret(const char *nameOfSecret, const std::string &data) { return false; }
-std::string NativeLoadSecret(const char *nameOfSecret) {
+bool NativeSaveSecret(std::string_view nameOfSecret, std::string_view data) { return false; }
+std::string NativeLoadSecret(std::string_view nameOfSecret) {
    return "";
 }

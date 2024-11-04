@@ -209,12 +209,9 @@ void SaveFileInfo::DoState(PointerWrap &p)
 
 SavedataParam::SavedataParam() { }
 
-void SavedataParam::Init()
-{
-	if (!pspFileSystem.GetFileInfo(savePath).exists)
-	{
-		pspFileSystem.MkDir(savePath);
-	}
+void SavedataParam::Init() {
+	// If the folder already exists, this is a no-op.
+	pspFileSystem.MkDir(savePath);
 	// Create a nomedia file to hide save icons form Android image viewer
 #if PPSSPP_PLATFORM(ANDROID)
 	int handle = pspFileSystem.OpenFile(savePath + ".nomedia", (FileAccess)(FILEACCESS_CREATE | FILEACCESS_WRITE), 0);
@@ -337,7 +334,7 @@ bool SavedataParam::Delete(SceUtilitySavedataParam* param, int saveId) {
 
 	std::string dirPath = GetSaveFilePath(param, GetSaveDir(saveId));
 	if (dirPath.size() == 0) {
-		ERROR_LOG(Log::sceUtility, "GetSaveFilePath returned empty - cannot delete save directory");
+		ERROR_LOG(Log::sceUtility, "GetSaveFilePath (%.*s) returned empty - cannot delete save directory. Might already be deleted?", (int)sizeof(param->gameName), param->gameName);
 		return false;
 	}
 
@@ -459,7 +456,7 @@ int SavedataParam::Save(SceUtilitySavedataParam* param, const std::string &saveD
 		}
 	}
 
-	u8* cryptedData = 0;
+	u8* cryptedData = nullptr;
 	int cryptedSize = 0;
 	u8 cryptedHash[0x10]{};
 	// Encrypt save.
@@ -503,11 +500,13 @@ int SavedataParam::Save(SceUtilitySavedataParam* param, const std::string &saveD
 	std::string sfopath = dirPath + "/" + SFO_FILENAME;
 	std::shared_ptr<ParamSFOData> sfoFile = LoadCachedSFO(sfopath, true);
 
+	// This was added in #18430, see below.
 	bool subWrite = param->mode == SCE_UTILITY_SAVEDATA_TYPE_WRITEDATASECURE || param->mode == SCE_UTILITY_SAVEDATA_TYPE_WRITEDATA;
 	bool wasCrypted = GetSaveCryptMode(param, saveDirName) != 0;
 
-	// Update values
-	if(!subWrite){
+	// Update values. NOTE! #18430 made this conditional on !subWrite, but this is not correct, as it causes #18687.
+	// So now we do a hacky trick and just check for a valid title before we proceed with updating the sfoFile.
+	if (strnlen(param->sfoParam.title, sizeof(param->sfoParam.title)) > 0) {
 		sfoFile->SetValue("TITLE", param->sfoParam.title, 128);
 		sfoFile->SetValue("SAVEDATA_TITLE", param->sfoParam.savedataTitle, 128);
 		sfoFile->SetValue("SAVEDATA_DETAIL", param->sfoParam.detail, 1024);
@@ -554,7 +553,7 @@ int SavedataParam::Save(SceUtilitySavedataParam* param, const std::string &saveD
 	// Calc SFO hash for PSP.
 	if (cryptedData != 0 || (subWrite && wasCrypted)) {
 		int offset = sfoFile->GetDataOffset(sfoData, "SAVEDATA_PARAMS");
-		if(offset >= 0)
+		if (offset >= 0)
 			UpdateHash(sfoData, (int)sfoSize, offset, DetermineCryptMode(param));
 	}
 
@@ -597,7 +596,6 @@ int SavedataParam::Save(SceUtilitySavedataParam* param, const std::string &saveD
 		}	
 		delete[] cryptedData;
 	}
-
 
 	// SAVE ICON0
 	if (param->icon0FileData.buf.IsValid())
@@ -885,7 +883,7 @@ std::set<std::string> SavedataParam::GetSecureFileNames(const std::string &dirPa
 
 	std::set<std::string> secureFileNames;
 	for (const auto &entry : entries) {
-		char temp[14];
+		char temp[14]{};
 		truncate_cpy(temp, entry.filename);
 		secureFileNames.insert(temp);
 	}
@@ -1493,16 +1491,15 @@ void SavedataParam::Clear()
 		}
 
 		delete [] saveDataList;
-		saveDataList = 0;
+		saveDataList = NULL;
 		saveDataListCount = 0;
 	}
 	if (noSaveIcon)
 	{
-		if (noSaveIcon->texture != NULL)
-			delete noSaveIcon->texture;
+		delete noSaveIcon->texture;
 		noSaveIcon->texture = NULL;
 		delete noSaveIcon;
-		noSaveIcon = 0;
+		noSaveIcon = NULL;
 	}
 }
 
@@ -1923,8 +1920,7 @@ void SavedataParam::DoState(PointerWrap &p) {
 	Do(p, saveDataListCount);
 	Do(p, saveNameListDataCount);
 	if (p.mode == p.MODE_READ) {
-		if (saveDataList)
-			delete [] saveDataList;
+		delete [] saveDataList;
 		if (saveDataListCount != 0) {
 			saveDataList = new SaveFileInfo[saveDataListCount];
 			DoArray(p, saveDataList, saveDataListCount);

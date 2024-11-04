@@ -60,7 +60,7 @@
 #endif
 #endif
 
-StereoResampler::StereoResampler()
+StereoResampler::StereoResampler() noexcept
 		: m_maxBufsize(MAX_BUFSIZE_DEFAULT)
 	  , m_targetBufsize(TARGET_BUFSIZE_DEFAULT) {
 	// Need to have space for the worst case in case it changes.
@@ -165,7 +165,13 @@ void StereoResampler::Clear() {
 }
 
 inline int16_t MixSingleSample(int16_t s1, int16_t s2, uint16_t frac) {
-	return s1 + (((s2 - s1) * frac) >> 16);
+	int32_t value = s1 + (((s2 - s1) * frac) >> 16);
+	if (value < -32767)
+		return -32767;
+	else if (value > 32767)
+		return 32767;
+	else
+		return (int16_t)value;
 }
 
 // Executed from sound stream thread, pulling sound out of the buffer.

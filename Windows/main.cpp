@@ -106,6 +106,7 @@ CVFPUDlg *vfpudlg = nullptr;
 
 static std::string langRegion;
 static std::string osName;
+static std::string osVersion;
 static std::string gpuDriverVersion;
 
 static std::string restartArgs;
@@ -120,7 +121,7 @@ static double g_lastActivity = 0.0;
 static double g_lastKeepAwake = 0.0;
 // Time until we stop considering the core active without user input.
 // Should this be configurable?  2 hours currently.
-static const double ACTIVITY_IDLE_TIMEOUT = 2.0 * 3600.0;
+static constexpr double ACTIVITY_IDLE_TIMEOUT = 2.0 * 3600.0;
 
 void System_LaunchUrl(LaunchUrlType urlType, const char *url) {
 	ShellExecute(NULL, L"open", ConvertUTF8ToWString(url).c_str(), NULL, NULL, SW_SHOWNORMAL);
@@ -203,6 +204,8 @@ std::string System_GetProperty(SystemProperty prop) {
 	switch (prop) {
 	case SYSPROP_NAME:
 		return osName;
+	case SYSPROP_SYSTEMBUILD:
+		return osVersion;
 	case SYSPROP_LANGREGION:
 		return langRegion;
 	case SYSPROP_CLIPBOARD_TEXT:
@@ -355,6 +358,7 @@ float System_GetPropertyFloat(SystemProperty prop) {
 
 bool System_GetPropertyBool(SystemProperty prop) {
 	switch (prop) {
+	case SYSPROP_HAS_TEXT_CLIPBOARD:
 	case SYSPROP_HAS_DEBUGGER:
 	case SYSPROP_HAS_FILE_BROWSER:
 	case SYSPROP_HAS_FOLDER_BROWSER:
@@ -536,7 +540,14 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 	case SystemRequestType::INPUT_TEXT_MODAL:
 		std::thread([=] {
 			std::string out;
-			if (InputBox_GetString(MainWindow::GetHInstance(), MainWindow::GetHWND(), ConvertUTF8ToWString(param1).c_str(), param2, out)) {
+			InputBoxFlags flags{};
+			if (param3) {
+				flags |= InputBoxFlags::PasswordMasking;
+			}
+			if (!param2.empty()) {
+				flags |= InputBoxFlags::Selected;
+			}
+			if (InputBox_GetString(MainWindow::GetHInstance(), MainWindow::GetHWND(), ConvertUTF8ToWString(param1).c_str(), param2, out, flags)) {
 				g_requestManager.PostSystemSuccess(requestId, out.c_str());
 			} else {
 				g_requestManager.PostSystemFailure(requestId);
@@ -887,6 +898,8 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLin
 
 	SetCurrentThreadName("Main");
 
+	TimeInit();
+
 	WinMainInit();
 
 #ifndef _DEBUG
@@ -902,12 +915,18 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLin
 	langRegion = GetDefaultLangRegion();
 	osName = GetWindowsVersion() + " " + GetWindowsSystemArchitecture();
 
+	// OS Build
+	uint32_t outMajor = 0, outMinor = 0, outBuild = 0;
+	if (GetVersionFromKernel32(outMajor, outMinor, outBuild)) {
+		// Builds with (service pack) don't show OS Build for now
+		osVersion = std::to_string(outMajor) + "." + std::to_string(outMinor) + "." + std::to_string(outBuild);
+	}
+
 	std::string configFilename = "";
 	const std::wstring configOption = L"--config=";
 
 	std::string controlsConfigFilename = "";
 	const std::wstring controlsOption = L"--controlconfig=";
-
 
 	for (size_t i = 1; i < wideArgs.size(); ++i) {
 		if (wideArgs[i][0] == L'\0')
@@ -1015,9 +1034,6 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLin
 	if (debugLogLevel) {
 		LogManager::GetInstance()->SetAllLogLevels(LogLevel::LDEBUG);
 	}
-
-	// This still seems to improve performance noticeably.
-	timeBeginPeriod(1);
 
 	ContextMenuInit(_hInstance);
 	MainWindow::Init(_hInstance);

@@ -38,14 +38,10 @@ void VR_UpdateStageBounds(ovrApp* pappState) {
 	XrResult result;
 	OXR(result = xrGetReferenceSpaceBoundsRect(pappState->Session, XR_REFERENCE_SPACE_TYPE_STAGE, &stageBounds));
 	if (result != XR_SUCCESS) {
-		ALOGV("Stage bounds query failed: using small defaults");
 		stageBounds.width = 1.0f;
 		stageBounds.height = 1.0f;
-
 		pappState->CurrentSpace = pappState->FakeStageSpace;
 	}
-
-	ALOGV("Stage bounds: width = %f, depth %f", stageBounds.width, stageBounds.height);
 }
 
 void VR_GetResolution(engine_t* engine, int *pWidth, int *pHeight) {
@@ -167,6 +163,8 @@ void VR_Recenter(engine_t* engine) {
 	// Create a default stage space to use if SPACE_TYPE_STAGE is not
 	// supported, or calls to xrGetReferenceSpaceBoundsRect fail.
 	spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+	spaceCreateInfo.poseInReferenceSpace = {};
+	spaceCreateInfo.poseInReferenceSpace.orientation.w = 1.0;
 	if (VR_GetPlatformFlag(VR_PLATFORM_TRACKING_FLOOR)) {
 		spaceCreateInfo.poseInReferenceSpace.position.y = -1.6750f;
 	}
@@ -176,7 +174,8 @@ void VR_Recenter(engine_t* engine) {
 
 	if (stageSupported) {
 		spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
-		spaceCreateInfo.poseInReferenceSpace.position.y = 0.0;
+		spaceCreateInfo.poseInReferenceSpace = {};
+		spaceCreateInfo.poseInReferenceSpace.orientation.w = 1.0;
 		OXR(xrCreateReferenceSpace(engine->appState.Session, &spaceCreateInfo, &engine->appState.StageSpace));
 		ALOGV("Created stage space");
 		if (VR_GetPlatformFlag(VR_PLATFORM_TRACKING_FLOOR)) {
@@ -384,7 +383,9 @@ void VR_EndFrame( engine_t* engine ) {
 void VR_FinishFrame( engine_t* engine ) {
 	int vrMode = vrConfig[VR_CONFIG_MODE];
 	XrCompositionLayerProjectionView projection_layer_elements[2] = {};
-	if ((vrMode == VR_MODE_MONO_6DOF) || (vrMode == VR_MODE_SBS_6DOF) || (vrMode == VR_MODE_STEREO_6DOF)) {
+	bool headTracking = (vrMode == VR_MODE_MONO_6DOF) || (vrMode == VR_MODE_SBS_6DOF) || (vrMode == VR_MODE_STEREO_6DOF);
+	bool reprojection = vrConfig[VR_CONFIG_REPROJECTION];
+	if (headTracking && reprojection) {
 		VR_SetConfigFloat(VR_CONFIG_MENU_YAW, hmdorientation.y);
 
 		for (int eye = 0; eye < ovrMaxNumEyes; eye++) {;
@@ -427,7 +428,7 @@ void VR_FinishFrame( engine_t* engine ) {
 		projection_layer.views = projection_layer_elements;
 
 		engine->appState.Layers[engine->appState.LayerCount++].Projection = projection_layer;
-	} else if ((vrMode == VR_MODE_MONO_SCREEN) || (vrMode == VR_MODE_SBS_SCREEN) || (vrMode == VR_MODE_STEREO_SCREEN)) {
+	} else {
 
 		// Flat screen pose
 		float distance = VR_GetConfigFloat(VR_CONFIG_CANVAS_DISTANCE) / 4.0f - 1.0f;
@@ -459,12 +460,18 @@ void VR_FinishFrame( engine_t* engine ) {
 		cylinder_layer.radius = 2.0f;
 		cylinder_layer.centralAngle = (float)(M_PI * 0.5);
 		cylinder_layer.aspectRatio = VR_GetConfigFloat(VR_CONFIG_CANVAS_ASPECT);
+		if (headTracking && !reprojection) {
+			float width = (float)engine->appState.ViewConfigurationView[0].recommendedImageRectWidth;
+			float height = (float)engine->appState.ViewConfigurationView[0].recommendedImageRectHeight;
+			cylinder_layer.aspectRatio = 2.0f * width / height;
+			cylinder_layer.centralAngle = (float)(M_PI);
+		}
 
 		// Build the cylinder layer
-		if (vrMode == VR_MODE_MONO_SCREEN) {
+		if ((vrMode == VR_MODE_MONO_SCREEN) || (vrMode == VR_MODE_MONO_6DOF)) {
 			cylinder_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
 			engine->appState.Layers[engine->appState.LayerCount++].Cylinder = cylinder_layer;
-		} else if (vrMode == VR_MODE_SBS_SCREEN) {
+		} else if ((vrMode == VR_MODE_SBS_SCREEN) || (vrMode == VR_MODE_SBS_6DOF)) {
 			cylinder_layer.eyeVisibility = XR_EYE_VISIBILITY_LEFT;
 			cylinder_layer.subImage.imageRect.extent.width /= 2;
 			engine->appState.Layers[engine->appState.LayerCount++].Cylinder = cylinder_layer;
@@ -478,8 +485,6 @@ void VR_FinishFrame( engine_t* engine ) {
 			cylinder_layer.subImage.swapchain = engine->appState.Renderer.FrameBuffer[1].ColorSwapChain.Handle;
 			engine->appState.Layers[engine->appState.LayerCount++].Cylinder = cylinder_layer;
 		}
-	} else {
-		assert(false);
 	}
 
 	// Compose the layers for this frame.
