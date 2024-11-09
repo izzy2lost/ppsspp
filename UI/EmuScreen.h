@@ -29,6 +29,8 @@
 #include "Core/KeyMap.h"
 #include "Core/ControlMapper.h"
 
+#include "UI/ImDebugger/ImDebugger.h"
+
 struct AxisInput;
 
 class AsyncImageFileView;
@@ -56,6 +58,10 @@ public:
 
 	// We also need to do some special handling of queued UI events to handle closing the chat window.
 	bool key(const KeyInput &key) override;
+	void touch(const TouchInput &key) override;
+
+	void deviceLost() override;
+	void deviceRestored(Draw::DrawContext *draw) override;
 
 protected:
 	void darken();
@@ -124,4 +130,9 @@ private:
 	std::atomic<bool> doFrameAdvance_{};
 
 	ControlMapper controlMapper_;
+
+	std::unique_ptr<ImDebugger> imDebugger_ = nullptr;
+
+	bool imguiInited_ = false;
+	bool imguiVisible_ = false;
 };

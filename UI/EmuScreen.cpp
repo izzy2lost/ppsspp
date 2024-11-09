@@ -73,8 +73,9 @@ using namespace std::placeholders;
 #include "Core/Debugger/SymbolMap.h"
 #include "Core/RetroAchievements.h"
 #include "Core/SaveState.h"
+#include "UI/ImDebugger/ImDebugger.h"
 #include "Core/HLE/__sceAudio.h"
-#include "Core/HLE/proAdhoc.h"
+// #include "Core/HLE/proAdhoc.h"
 #include "Core/HW/Display.h"
 
 #include "UI/BackgroundAudio.h"
@@ -93,6 +94,10 @@ using namespace std::placeholders;
 #include "UI/DiscordIntegration.h"
 #include "UI/ChatScreen.h"
 #include "UI/DebugOverlay.h"
+
+#include "ext/imgui/imgui.h"
+#include "ext/imgui/imgui_impl_thin3d.h"
+#include "ext/imgui/imgui_impl_platform.h"
 
 #include "Core/Reporting.h"
 
@@ -118,7 +123,7 @@ static void __EmuScreenVblank()
 	if (frameStep_ && lastNumFlips != gpuStats.numFlips)
 	{
 		frameStep_ = false;
-		Core_EnableStepping(true, "ui.frameAdvance", 0);
+		Core_Break("ui.frameAdvance", 0);
 		lastNumFlips = gpuStats.numFlips;
 	}
 #ifndef MOBILE_DEVICE
@@ -198,6 +203,10 @@ EmuScreen::EmuScreen(const Path &filename)
 	// Usually, we don't want focus movement enabled on this screen, so disable on start.
 	// Only if you open chat or dev tools do we want it to start working.
 	UI::EnableFocusMovement(false);
+
+	// TODO: Do this only on demand.
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
 }
 
 bool EmuScreen::bootAllowStorage(const Path &filename) {
@@ -438,6 +447,11 @@ void EmuScreen::bootComplete() {
 }
 
 EmuScreen::~EmuScreen() {
+	if (imguiInited_) {
+		ImGui_ImplThin3d_Shutdown();
+		ImGui::DestroyContext();
+	}
+
 	std::string gameID = g_paramSFO.GetValueString("DISC_ID");
 	g_Config.TimeTracker().Stop(gameID);
 
@@ -495,7 +509,7 @@ static void AfterSaveStateAction(SaveState::Status status, std::string_view mess
 
 static void AfterStateBoot(SaveState::Status status, std::string_view message, void *ignored) {
 	AfterSaveStateAction(status, message, ignored);
-	Core_EnableStepping(false);
+	Core_Resume();
 	System_Notify(SystemNotification::DISASSEMBLY);
 }
 
@@ -642,7 +656,9 @@ bool EmuScreen::UnsyncTouch(const TouchInput &touch) {
 		}
 	}
 
-	GamepadTouch();
+	if (!(imguiVisible_ && imguiInited_)) {
+		GamepadTouch();
+	}
 
 	if (root_) {
 		UIScreen::UnsyncTouch(touch);
@@ -655,10 +671,15 @@ void EmuScreen::onVKey(int virtualKeyCode, bool down) {
 	auto mc = GetI18NCategory(I18NCat::MAPPABLECONTROLS);
 
 	switch (virtualKeyCode) {
+	case VIRTKEY_TOGGLE_DEBUGGER:
+		if (down) {
+			imguiVisible_ = !imguiVisible_;
+		}
+		break;
 	case VIRTKEY_FASTFORWARD:
 		if (down) {
 			if (coreState == CORE_STEPPING) {
-				Core_EnableStepping(false);
+				Core_Resume();
 			}
 			PSP_CoreParameter().fastForward = true;
 		} else {
@@ -931,8 +952,22 @@ void EmuScreen::onVKeyAnalog(int virtualKeyCode, float value) {
 
 bool EmuScreen::UnsyncKey(const KeyInput &key) {
 	System_Notify(SystemNotification::ACTIVITY);
+	if (UI::IsFocusMovementEnabled() || (imguiVisible_ && imguiInited_)) {
+		// Note: Allow some Vkeys through, so we can toggle the imgui for example (since we actually block the control mapper otherwise in imgui mode).
+		// We need to manually implement it here :/
+		if (imguiVisible_ && imguiInited_ && (key.flags & (KEY_UP | KEY_DOWN))) {
+			InputMapping mapping(key.deviceId, key.keyCode);
+			std::vector<int> pspButtons;
+			bool mappingFound = KeyMap::InputMappingToPspButton(mapping, &pspButtons);
+			if (mappingFound) {
+				for (auto b : pspButtons) {
+					if (b == VIRTKEY_TOGGLE_DEBUGGER || b == VIRTKEY_PAUSE) {
+						return controlMapper_.Key(key, &pauseTrigger_);
+					}
+				}
+			}
+		}
 
-	if (UI::IsFocusMovementEnabled()) {
 		return UIScreen::UnsyncKey(key);
 	}
 	return controlMapper_.Key(key, &pauseTrigger_);
@@ -940,6 +975,10 @@ bool EmuScreen::UnsyncKey(const KeyInput &key) {
 
 bool EmuScreen::key(const KeyInput &key) {
 	bool retval = UIScreen::key(key);
+
+	if (!retval && imguiVisible_ && imguiInited_) {
+		ImGui_ImplPlatform_KeyEvent(key);
+	}
 
 	if (!retval && (key.flags & KEY_DOWN) != 0 && UI::IsEscapeKey(key)) {
 		if (chatMenu_)
@@ -951,6 +990,14 @@ bool EmuScreen::key(const KeyInput &key) {
 	}
 
 	return retval;
+}
+
+void EmuScreen::touch(const TouchInput &touch) {
+	if (imguiVisible_ && imguiInited_) {
+		ImGui_ImplPlatform_TouchEvent(touch);
+	} else {
+		UIScreen::touch(touch);
+	}
 }
 
 void EmuScreen::UnsyncAxis(const AxisInput *axes, size_t count) {
@@ -1136,6 +1183,21 @@ void EmuScreen::CreateViews() {
 	loadingBG->SetVisibility(V_INVISIBLE);
 }
 
+void EmuScreen::deviceLost() {
+	UIScreen::deviceLost();
+
+	if (imguiInited_) {
+		ImGui_ImplThin3d_DestroyDeviceObjects();
+	}
+}
+
+void EmuScreen::deviceRestored(Draw::DrawContext *draw) {
+	UIScreen::deviceRestored(draw);
+	if (imguiInited_) {
+		ImGui_ImplThin3d_CreateDeviceObjects(draw);
+	}
+}
+
 UI::EventReturn EmuScreen::OnDevTools(UI::EventParams &params) {
 	DevMenuScreen *devMenu = new DevMenuScreen(gamePath_, I18NCat::DEVELOPER);
 	if (params.v)
@@ -1178,6 +1240,9 @@ UI::EventReturn EmuScreen::OnResume(UI::EventParams &params) {
 	}
 	return UI::EVENT_DONE;
 }
+
+// To avoid including proAdhoc.h, which includes a lot of stuff.
+int GetChatMessageCount();
 
 void EmuScreen::update() {
 	using namespace UI;
@@ -1452,10 +1517,10 @@ ScreenRenderFlags EmuScreen::render(ScreenRenderMode mode) {
 			// If game is running, pause emulation immediately. Otherwise, advance a single frame.
 			if (Core_IsStepping()) {
 				frameStep_ = true;
-				Core_EnableStepping(false);
+				Core_Resume();
 			} else if (!frameStep_) {
 				lastNumFlips = gpuStats.numFlips;
-				Core_EnableStepping(true, "ui.frameAdvance", 0);
+				Core_Break("ui.frameAdvance", 0);
 			}
 		}
 	}
@@ -1570,6 +1635,25 @@ ScreenRenderFlags EmuScreen::render(ScreenRenderMode mode) {
 
 	if (!(mode & ScreenRenderMode::TOP)) {
 		darken();
+	}
+
+	if (imguiVisible_ && !imguiInited_) {
+		imguiInited_ = true;
+		imDebugger_ = std::make_unique<ImDebugger>();
+		ImGui_ImplThin3d_Init(draw);
+	}
+
+	if (imguiVisible_ && imguiInited_ && PSP_IsInited()) {
+		_dbg_assert_(imDebugger_);
+
+		ImGui_ImplPlatform_NewFrame();
+		ImGui_ImplThin3d_NewFrame(draw, ui_draw2d.GetDrawMatrix());
+
+		ImGui::NewFrame();
+		imDebugger_->Frame(currentDebugMIPS);
+
+		ImGui::Render();
+		ImGui_ImplThin3d_RenderDrawData(ImGui::GetDrawData(), draw);
 	}
 	return flags;
 }

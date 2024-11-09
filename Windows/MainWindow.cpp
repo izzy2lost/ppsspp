@@ -632,9 +632,9 @@ namespace MainWindow
 				float y = GET_Y_LPARAM(lParam) * g_display.dpi_scale_y;
 				WindowsRawInput::SetMousePos(x, y);
 
-				TouchInput touch;
-				touch.id = 0;
-				touch.flags = TOUCH_DOWN;
+				TouchInput touch{};
+				touch.flags = TOUCH_DOWN | TOUCH_MOUSE;
+				touch.buttons = 1;
 				touch.x = x;
 				touch.y = y;
 				NativeTouch(touch);
@@ -680,14 +680,18 @@ namespace MainWindow
 				float y = (float)cursorY * g_display.dpi_scale_y;
 				WindowsRawInput::SetMousePos(x, y);
 
+				// Mouse moves now happen also when no button is pressed.
+				TouchInput touch{};
+				touch.flags = TOUCH_MOVE | TOUCH_MOUSE;
 				if (wParam & MK_LBUTTON) {
-					TouchInput touch;
-					touch.id = 0;
-					touch.flags = TOUCH_MOVE;
-					touch.x = x;
-					touch.y = y;
-					NativeTouch(touch);
+					touch.buttons |= 1;
 				}
+				if (wParam & MK_RBUTTON) {
+					touch.buttons |= 2;
+				}
+				touch.x = x;
+				touch.y = y;
+				NativeTouch(touch);
 			}
 			break;
 
@@ -702,9 +706,9 @@ namespace MainWindow
 				float y = (float)GET_Y_LPARAM(lParam) * g_display.dpi_scale_y;
 				WindowsRawInput::SetMousePos(x, y);
 
-				TouchInput touch;
-				touch.id = 0;
-				touch.flags = TOUCH_UP;
+				TouchInput touch{};
+				touch.buttons = 1;
+				touch.flags = TOUCH_UP | TOUCH_MOUSE;
 				touch.x = x;
 				touch.y = y;
 				NativeTouch(touch);
@@ -715,6 +719,34 @@ namespace MainWindow
 		case WM_TOUCH:
 			touchHandler.handleTouchEvent(hWnd, message, wParam, lParam);
 			return 0;
+
+		case WM_RBUTTONDOWN:
+		{
+			float x = GET_X_LPARAM(lParam) * g_display.dpi_scale_x;
+			float y = GET_Y_LPARAM(lParam) * g_display.dpi_scale_y;
+
+			TouchInput touch{};
+			touch.buttons = 2;
+			touch.flags = TOUCH_DOWN | TOUCH_MOUSE;
+			touch.x = x;
+			touch.y = y;
+			NativeTouch(touch);
+			break;
+		}
+
+		case WM_RBUTTONUP:
+		{
+			float x = GET_X_LPARAM(lParam) * g_display.dpi_scale_x;
+			float y = GET_Y_LPARAM(lParam) * g_display.dpi_scale_y;
+
+			TouchInput touch{};
+			touch.buttons = 2;
+			touch.flags = TOUCH_UP | TOUCH_MOUSE;
+			touch.x = x;
+			touch.y = y;
+			NativeTouch(touch);
+			break;
+		}
 
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
@@ -841,10 +873,15 @@ namespace MainWindow
 				}
 				if (!noFocusPause && g_Config.bPauseOnLostFocus && GetUIState() == UISTATE_INGAME) {
 					if (pause != Core_IsStepping()) {
-						if (disasmWindow)
+						if (disasmWindow) {
 							SendMessage(disasmWindow->GetDlgHandle(), WM_COMMAND, IDC_STOPGO, 0);
-						else
-							Core_EnableStepping(pause, "ui.lost_focus", 0);
+						} else {
+							if (pause) {
+								Core_Break("ui.lost_focus", 0);
+							} else {
+								Core_Resume();
+							}
+						}
 					}
 				}
 
@@ -1018,7 +1055,7 @@ namespace MainWindow
 					if (DragQueryFile(hdrop, 0, filename, ARRAY_SIZE(filename)) != 0) {
 						const std::string utf8_filename = ReplaceAll(ConvertWStringToUTF8(filename), "\\", "/");
 						System_PostUIMessage(UIMessage::REQUEST_GAME_BOOT, utf8_filename);
-						Core_EnableStepping(false);
+						Core_Resume();
 					}
 				}
 				DragFinish(hdrop);

@@ -38,6 +38,47 @@ include $(BUILD_STATIC_LIBRARY)
 include $(CLEAR_VARS)
 include $(LOCAL_PATH)/Locals.mk
 
+LUA_FILES := \
+	$(SRC)/ext/lua/lapi.c \
+	$(SRC)/ext/lua/lauxlib.c \
+	$(SRC)/ext/lua/lbaselib.c \
+	$(SRC)/ext/lua/lcode.c \
+	$(SRC)/ext/lua/lcorolib.c \
+	$(SRC)/ext/lua/lctype.c \
+	$(SRC)/ext/lua/ldblib.c \
+	$(SRC)/ext/lua/ldebug.c \
+	$(SRC)/ext/lua/ldo.c \
+	$(SRC)/ext/lua/ldump.c \
+	$(SRC)/ext/lua/lfunc.c \
+	$(SRC)/ext/lua/lgc.c \
+	$(SRC)/ext/lua/linit.c \
+	$(SRC)/ext/lua/liolib.c \
+	$(SRC)/ext/lua/llex.c \
+	$(SRC)/ext/lua/lmathlib.c \
+	$(SRC)/ext/lua/lmem.c \
+	$(SRC)/ext/lua/loadlib.c \
+	$(SRC)/ext/lua/lobject.c \
+	$(SRC)/ext/lua/lopcodes.c \
+	$(SRC)/ext/lua/loslib.c \
+	$(SRC)/ext/lua/lparser.c \
+	$(SRC)/ext/lua/lstate.c \
+	$(SRC)/ext/lua/lstring.c \
+	$(SRC)/ext/lua/lstrlib.c \
+	$(SRC)/ext/lua/ltable.c \
+	$(SRC)/ext/lua/ltablib.c \
+	$(SRC)/ext/lua/ltm.c \
+	$(SRC)/ext/lua/lundump.c \
+	$(SRC)/ext/lua/lutf8lib.c \
+	$(SRC)/ext/lua/lvm.c \
+	$(SRC)/ext/lua/lzio.c
+
+LOCAL_MODULE := lua
+LOCAL_SRC_FILES := $(LUA_FILES)
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
+include $(LOCAL_PATH)/Locals.mk
+
 LOCAL_CFLAGS += -DSTACK_LINE_READER_BUFFER_SIZE=1024 -DHAVE_DLFCN_H -DRC_DISABLE_LUA -D_7ZIP_ST
 
 # http://software.intel.com/en-us/articles/getting-started-on-optimizing-ndk-project-for-multiple-cpu-architectures
@@ -186,6 +227,13 @@ EXT_FILES := \
   $(SRC)/ext/libpng17/pngwtran.c \
   $(SRC)/ext/libpng17/pngwutil.c \
   $(SRC)/ext/basis_universal/basisu_transcoder.cpp \
+  $(SRC)/ext/imgui/imgui.cpp \
+  $(SRC)/ext/imgui/imgui_demo.cpp \
+  $(SRC)/ext/imgui/imgui_draw.cpp \
+  $(SRC)/ext/imgui/imgui_impl_thin3d.cpp \
+  $(SRC)/ext/imgui/imgui_impl_platform.cpp \
+  $(SRC)/ext/imgui/imgui_tables.cpp \
+  $(SRC)/ext/imgui/imgui_widgets.cpp \
   $(SRC)/ext/jpge/jpgd.cpp \
   $(SRC)/ext/jpge/jpge.cpp \
   $(SRC)/ext/sha1/sha1.cpp \
@@ -349,7 +397,7 @@ include $(BUILD_STATIC_LIBRARY)
 # Next up, Core, GPU, and other core parts shared by headless.
 include $(CLEAR_VARS)
 include $(LOCAL_PATH)/Locals.mk
-LOCAL_WHOLE_STATIC_LIBRARIES += ppsspp_common libchdr
+LOCAL_WHOLE_STATIC_LIBRARIES += ppsspp_common libchdr lua
 
 ifeq ($(TARGET_ARCH_ABI),x86_64)
 ARCH_FILES := \
@@ -826,6 +874,8 @@ LOCAL_SRC_FILES := \
   $(SRC)/android/jni/AndroidVulkanContext.cpp \
   $(SRC)/android/jni/AndroidAudio.cpp \
   $(SRC)/android/jni/OpenSLContext.cpp \
+  $(SRC)/UI/ImDebugger/ImDebugger.cpp \
+  $(SRC)/UI/ImDebugger/ImDisasmView.cpp \
   $(SRC)/UI/AudioCommon.cpp \
   $(SRC)/UI/BackgroundAudio.cpp \
   $(SRC)/UI/DiscordIntegration.cpp \

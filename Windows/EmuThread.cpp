@@ -76,7 +76,7 @@ bool MainThread_Ready() {
 }
 
 static void EmuThreadFunc(GraphicsContext *graphicsContext) {
-	SetCurrentThreadName("Emu");
+	SetCurrentThreadName("EmuThread");
 
 	// There's no real requirement that NativeInit happen on this thread.
 	// We just call the update/render loop here.
@@ -152,7 +152,7 @@ bool CreateGraphicsBackend(std::string *error_message, GraphicsContext **ctx) {
 
 void MainThreadFunc() {
 	// We'll start up a separate thread we'll call Emu
-	SetCurrentThreadName(useEmuThread ? "Render" : "Emu");
+	SetCurrentThreadName(useEmuThread ? "RenderThread" : "EmuThread");
 
 	SetConsolePosition();
 
@@ -180,7 +180,7 @@ void MainThreadFunc() {
 	} else if (useEmuThread) {
 		// We must've failed over from OpenGL, flip the emu thread off.
 		useEmuThread = false;
-		SetCurrentThreadName("Emu");
+		SetCurrentThreadName("EmuThread");
 	}
 
 	if (g_Config.sFailedGPUBackends.find("ALL") != std::string::npos) {
@@ -285,7 +285,7 @@ void MainThreadFunc() {
 	if (g_Config.bBrowse)
 		PostMessage(MainWindow::GetHWND(), WM_COMMAND, ID_FILE_LOAD, 0);
 
-	Core_EnableStepping(false);
+	Core_Resume();
 
 	if (useEmuThread) {
 		while (emuThreadState != (int)EmuThreadState::DISABLED) {
@@ -295,7 +295,7 @@ void MainThreadFunc() {
 			}
 		}
 	} else {
-		while (GetUIState() != UISTATE_EXIT) {
+		while (GetUIState() != UISTATE_EXIT) {  //  && GetUIState() != UISTATE_EXCEPTION
 			// We're here again, so the game quit.  Restart Core_Run() which controls the UI.
 			// This way they can load a new game.
 			if (!Core_IsActive())

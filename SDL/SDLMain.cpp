@@ -195,7 +195,11 @@ static void UpdateScreenDPI(SDL_Window *window) {
 		SDL_GL_GetDrawableSize(window, &drawable_width, NULL);
 	else if (g_Config.iGPUBackend == (int)GPUBackend::VULKAN)
 		SDL_Vulkan_GetDrawableSize(window, &drawable_width, NULL);
-
+	else {
+		// If we add SDL support for more platforms, we'll end up here.
+		g_DesktopDPI = 1.0f;
+		return;
+	}
 	// Round up a little otherwise there would be a gap sometimes
 	// in fractional scaling
 	g_DesktopDPI = ((float) drawable_width + 1.0f) / window_width;
@@ -686,7 +690,7 @@ static std::thread emuThread;
 static std::atomic<int> emuThreadState((int)EmuThreadState::DISABLED);
 
 static void EmuThreadFunc(GraphicsContext *graphicsContext) {
-	SetCurrentThreadName("Emu");
+	SetCurrentThreadName("EmuThread");
 
 	// There's no real requirement that NativeInit happen on this thread.
 	// We just call the update/render loop here.
@@ -729,7 +733,7 @@ struct InputStateTracker {
 		}
 	}
 
-	bool mouseDown;
+	int mouseDown;  // bitflags
 	bool mouseCaptured;
 };
 
@@ -843,7 +847,7 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 				if (ctrl && (k == SDLK_w))
 				{
 					if (Core_IsStepping())
-						Core_EnableStepping(false);
+						Core_Resume();
 					Core_Stop();
 					System_PostUIMessage(UIMessage::REQUEST_GAME_STOP);
 					// NOTE: Unlike Windows version, this
@@ -854,7 +858,7 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 				if (ctrl && (k == SDLK_b))
 				{
 					System_PostUIMessage(UIMessage::REQUEST_GAME_RESET);
-					Core_EnableStepping(false);
+					Core_Resume();
 				}
 			}
 			break;
@@ -943,11 +947,12 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 		switch (event.button.button) {
 		case SDL_BUTTON_LEFT:
 			{
-				inputTracker->mouseDown = true;
+				inputTracker->mouseDown |= 1;
 				TouchInput input{};
 				input.x = mx;
 				input.y = my;
 				input.flags = TOUCH_DOWN | TOUCH_MOUSE;
+				input.buttons = 1;
 				input.id = 0;
 				NativeTouch(input);
 				KeyInput key(DEVICE_ID_MOUSE, NKCODE_EXT_MOUSEBUTTON_1, KEY_DOWN);
@@ -956,12 +961,12 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 			break;
 		case SDL_BUTTON_RIGHT:
 			{
-				// Right button only emits mouse move events. This is weird,
-				// but consistent with Windows. Needs cleanup.
+				inputTracker->mouseDown |= 2;
 				TouchInput input{};
 				input.x = mx;
 				input.y = my;
-				input.flags = TOUCH_MOVE | TOUCH_MOUSE;
+				input.flags = TOUCH_DOWN | TOUCH_MOUSE;
+				input.buttons = 2;
 				input.id = 0;
 				NativeTouch(input);
 				KeyInput key(DEVICE_ID_MOUSE, NKCODE_EXT_MOUSEBUTTON_2, KEY_DOWN);
@@ -1018,25 +1023,27 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 			break;
 		}
 	case SDL_MOUSEMOTION:
-		if (inputTracker->mouseDown) {
+		{
 			TouchInput input{};
 			input.x = mx;
 			input.y = my;
 			input.flags = TOUCH_MOVE | TOUCH_MOUSE;
+			input.buttons = inputTracker->mouseDown;
 			input.id = 0;
 			NativeTouch(input);
+			NativeMouseDelta(event.motion.xrel, event.motion.yrel);
+			break;
 		}
-		NativeMouseDelta(event.motion.xrel, event.motion.yrel);
-		break;
 	case SDL_MOUSEBUTTONUP:
 		switch (event.button.button) {
 		case SDL_BUTTON_LEFT:
 			{
-				inputTracker->mouseDown = false;
+				inputTracker->mouseDown &= ~1;
 				TouchInput input{};
 				input.x = mx;
 				input.y = my;
 				input.flags = TOUCH_UP | TOUCH_MOUSE;
+				input.buttons = 1;
 				NativeTouch(input);
 				KeyInput key(DEVICE_ID_MOUSE, NKCODE_EXT_MOUSEBUTTON_1, KEY_UP);
 				NativeKey(key);
@@ -1044,12 +1051,14 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 			break;
 		case SDL_BUTTON_RIGHT:
 			{
+				inputTracker->mouseDown &= ~2;
 				// Right button only emits mouse move events. This is weird,
 				// but consistent with Windows. Needs cleanup.
 				TouchInput input{};
 				input.x = mx;
 				input.y = my;
-				input.flags = TOUCH_MOVE | TOUCH_MOUSE;
+				input.flags = TOUCH_UP | TOUCH_MOUSE;
+				input.buttons = 2;
 				NativeTouch(input);
 				KeyInput key(DEVICE_ID_MOUSE, NKCODE_EXT_MOUSEBUTTON_2, KEY_UP);
 				NativeKey(key);

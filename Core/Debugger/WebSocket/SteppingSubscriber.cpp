@@ -93,7 +93,7 @@ void WebSocketSteppingState::Into(DebuggerRequest &req) {
 	if (!currentDebugMIPS->isAlive())
 		return req.Fail("CPU not started");
 	if (!Core_IsStepping()) {
-		Core_EnableStepping(true, "cpu.stepInto", 0);
+		Core_Break("cpu.stepInto", 0);
 		return;
 	}
 
@@ -107,9 +107,7 @@ void WebSocketSteppingState::Into(DebuggerRequest &req) {
 		CBreakPoints::SetSkipFirst(currentMIPS->pc);
 
 		int c = GetNextInstructionCount(cpuDebug);
-		for (int i = 0; i < c; ++i) {
-			Core_DoSingleStep();
-		}
+		Core_RequestSingleStep(CPUStepType::Into, c);
 	} else {
 		uint32_t breakpointAddress = cpuDebug->GetPC();
 		PrepareResume();
@@ -119,7 +117,7 @@ void WebSocketSteppingState::Into(DebuggerRequest &req) {
 		if (cpuDebug != currentDebugMIPS) {
 			CBreakPoints::AddBreakPoint(breakpointAddress, true);
 			AddThreadCondition(breakpointAddress, threadID);
-			Core_EnableStepping(false);
+			Core_Resume();
 		}
 	}
 }
@@ -173,7 +171,7 @@ void WebSocketSteppingState::Over(DebuggerRequest &req) {
 		CBreakPoints::AddBreakPoint(breakpointAddress, true);
 		if (cpuDebug != currentDebugMIPS)
 			AddThreadCondition(breakpointAddress, threadID);
-		Core_EnableStepping(false);
+		Core_Resume();
 	}
 }
 
@@ -222,7 +220,7 @@ void WebSocketSteppingState::Out(DebuggerRequest &req) {
 		CBreakPoints::AddBreakPoint(breakpointAddress, true);
 		if (cpuDebug != currentDebugMIPS)
 			AddThreadCondition(breakpointAddress, threadID);
-		Core_EnableStepping(false);
+		Core_Resume();
 	}
 }
 
@@ -248,7 +246,7 @@ void WebSocketSteppingState::RunUntil(DebuggerRequest &req) {
 	// We may have arrived already if PauseResume() stepped out of a delay slot.
 	if (currentMIPS->pc != address || wasAtAddress) {
 		CBreakPoints::AddBreakPoint(address, true);
-		Core_EnableStepping(false);
+		Core_Resume();
 	}
 }
 
@@ -264,7 +262,7 @@ void WebSocketSteppingState::HLE(DebuggerRequest &req) {
 
 	PrepareResume();
 	hleDebugBreak();
-	Core_EnableStepping(false);
+	Core_Resume();
 }
 
 uint32_t WebSocketSteppingState::GetNextAddress(DebugInterface *cpuDebug) {
@@ -278,7 +276,8 @@ int WebSocketSteppingState::GetNextInstructionCount(DebugInterface *cpuDebug) {
 
 void WebSocketSteppingState::PrepareResume() {
 	if (currentMIPS->inDelaySlot) {
-		Core_DoSingleStep();
+		// Delay slot instructions are never joined, so we pass 1.
+		Core_RequestSingleStep(CPUStepType::Into, 1);
 	} else {
 		// If the current PC is on a breakpoint, the user doesn't want to do nothing.
 		CBreakPoints::SetSkipFirst(currentMIPS->pc);

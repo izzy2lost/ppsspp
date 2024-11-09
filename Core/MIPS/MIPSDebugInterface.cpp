@@ -243,15 +243,21 @@ void MIPSDebugInterface::toggleBreakpoint(unsigned int address)
 }
 
 
-int MIPSDebugInterface::getColor(unsigned int address)
-{
-	int colors[6] = {0xe0FFFF,0xFFe0e0,0xe8e8FF,0xFFe0FF,0xe0FFe0,0xFFFFe0};
-	int n=g_symbolMap->GetFunctionNum(address);
-	if (n==-1) return 0xFFFFFF;
-	return colors[n%6];
+int MIPSDebugInterface::getColor(unsigned int address, bool darkMode) const {
+	uint32_t colors[6] = { 0xFFe0FFFF, 0xFFFFe0e0, 0xFFe8e8FF, 0xFFFFe0FF, 0xFFe0FFe0, 0xFFFFFFe0 };
+	uint32_t colorsDark[6] = { 0xFF301010, 0xFF103030, 0xFF403010, 0xFF103000, 0xFF301030, 0xFF101030 };
+
+	int n = g_symbolMap->GetFunctionNum(address);
+	if (n == -1) {
+		return DebugInterface::getColor(address, darkMode);
+	} else if (darkMode) {
+		return colorsDark[n % ARRAY_SIZE(colorsDark)];
+	} else {
+		return colors[n % ARRAY_SIZE(colors)];
+	}
 }
-std::string MIPSDebugInterface::getDescription(unsigned int address) 
-{
+
+std::string MIPSDebugInterface::getDescription(unsigned int address) {
 	return g_symbolMap->GetDescription(address);
 }
 

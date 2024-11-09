@@ -249,6 +249,11 @@ bool Clickable::Touch(const TouchInput &input) {
 		return contains;
 	}
 
+	// Ignore buttons other than the left one.
+	if ((input.flags & TOUCH_MOUSE) && (input.buttons & 1) == 0) {
+		return contains;
+	}
+
 	if (input.flags & TOUCH_DOWN) {
 		if (bounds_.Contains(input.x, input.y)) {
 			if (IsFocusMovementEnabled())
@@ -1408,6 +1413,7 @@ bool TriggerButton::Touch(const TouchInput &input) {
 			down_ |= 1 << input.id;
 		}
 	}
+
 	if (input.flags & TOUCH_MOVE) {
 		if (contains)
 			down_ |= 1 << input.id;

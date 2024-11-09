@@ -32,6 +32,8 @@
 #include <mutex>
 #include <condition_variable>
 
+#include "ext/lua/lapi.h"
+
 #include "Common/System/System.h"
 #include "Common/System/Request.h"
 #include "Common/File/Path.h"
@@ -117,6 +119,9 @@ static volatile bool pspIsInited = false;
 static volatile bool pspIsIniting = false;
 static volatile bool pspIsQuitting = false;
 static volatile bool pspIsRebooting = false;
+
+// This is called on EmuThread before RunLoop.
+void Core_ProcessStepping(MIPSDebugInterface *cpu);
 
 void ResetUIState() {
 	globalUIState = UISTATE_MENU;
@@ -386,7 +391,6 @@ void Core_UpdateState(CoreState newState) {
 	if ((coreState == CORE_RUNNING || coreState == CORE_NEXTFRAME) && newState != CORE_RUNNING)
 		coreStatePending = true;
 	coreState = newState;
-	Core_UpdateSingleStep();
 }
 
 void Core_UpdateDebugStats(bool collectStats) {
@@ -526,6 +530,8 @@ bool PSP_InitUpdate(std::string *error_string) {
 }
 
 bool PSP_Init(const CoreParameter &coreParam, std::string *error_string) {
+	// Spawn a lua instance
+
 	if (!PSP_InitStart(coreParam, error_string))
 		return false;
 
@@ -629,7 +635,7 @@ void PSP_RunLoopUntil(u64 globalticks) {
 	if (coreState == CORE_POWERDOWN || coreState == CORE_BOOT_ERROR || coreState == CORE_RUNTIME_ERROR) {
 		return;
 	} else if (coreState == CORE_STEPPING) {
-		Core_ProcessStepping();
+		Core_ProcessStepping(currentDebugMIPS);
 		return;
 	}
 
