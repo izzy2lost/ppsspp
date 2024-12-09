@@ -36,7 +36,7 @@
 #include "Core/MemMap.h"
 #include "Core/MIPS/MIPS.h"
 #include "Core/System.h"
-#include "GPU/GPUInterface.h"
+#include "GPU/GPUCommon.h"
 #include "GPU/GPUState.h"
 #include "GPU/ge_constants.h"
 #include "GPU/Debugger/Playback.h"
@@ -334,7 +334,12 @@ void DumpExecute::SyncStall() {
 		return;
 	}
 
-	gpu->UpdateStall(execListID, execListPos);
+	bool runList;
+	gpu->UpdateStall(execListID, execListPos, &runList);
+	if (runList) {
+		DLResult result = gpu->ProcessDLQueue();
+		_dbg_assert_(result == DLResult::Done || result == DLResult::Stall);
+	}
 	s64 listTicks = gpu->GetListTicks(execListID);
 	if (listTicks != -1) {
 		s64 nowTicks = CoreTiming::GetTicks();
@@ -365,7 +370,11 @@ bool DumpExecute::SubmitCmds(const void *p, u32 sz) {
 
 		gpu->EnableInterrupts(false);
 		auto optParam = PSPPointer<PspGeListArgs>::Create(0);
-		execListID = gpu->EnqueueList(execListBuf, execListPos, -1, optParam, false);
+		bool runList;
+		execListID = gpu->EnqueueList(execListBuf, execListPos, -1, optParam, false, &runList);
+		if (runList) {
+			gpu->ProcessDLQueue();
+		}
 		gpu->EnableInterrupts(true);
 	}
 

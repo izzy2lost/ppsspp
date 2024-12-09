@@ -28,9 +28,8 @@
 #include "Core/Config.h"
 #include "Core/Debugger/Breakpoints.h"
 #include "Core/MemMapHelpers.h"
-#include "Core/Config.h"
 #include "Core/Reporting.h"
-#include "Core/System.h"
+#include "Core/Core.h"
 #include "Core/ELF/ParamSFO.h"
 
 #include "GPU/GPUState.h"
@@ -247,7 +246,7 @@ void GPU_GLES::BeginHostFrame() {
 	// Save the cache from time to time. TODO: How often? We save on exit, so shouldn't need to do this all that often.
 
 	const int saveShaderCacheFrameInterval = 32767;  // power of 2 - 1. About every 10 minutes at 60fps.
-	if (shaderCachePath_.Valid() && !(gpuStats.numFlips & saveShaderCacheFrameInterval) && coreState == CORE_RUNNING) {
+	if (shaderCachePath_.Valid() && !(gpuStats.numFlips & saveShaderCacheFrameInterval) && coreState == CORE_RUNNING_CPU) {
 		shaderManagerGL_->SaveCache(shaderCachePath_, &drawEngine_);
 	}
 	shaderManagerGL_->DirtyLastShader();

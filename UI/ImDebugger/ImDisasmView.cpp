@@ -1,7 +1,9 @@
 
 #include "ext/imgui/imgui_internal.h"
+#include "ext/imgui/imgui_impl_thin3d.h"
 
 #include "Common/StringUtils.h"
+#include "Common/Log.h"
 #include "Core/Core.h"
 #include "Core/Debugger/DebugInterface.h"
 #include "Core/Debugger/DisassemblyManager.h"
@@ -100,7 +102,6 @@ static std::string trimString(std::string input) {
 
 void ImDisasmView::assembleOpcode(u32 address, const std::string &defaultText) {
 	/*
-	auto memLock = Memory::Lock();
 	if (!Core_IsStepping()) {
 		MessageBox(wnd, L"Cannot change code while the core is running!", L"Error", MB_OK);
 		return;
@@ -177,8 +178,7 @@ void ImDisasmView::drawBranchLine(ImDrawList *drawList, Rect rect, std::map<u32,
 		bottomY = (float)addressPositions[line.second] + rowHeight_ / 2;
 	}
 
-	if ((topY < 0 && bottomY < 0) || (topY > rect.bottom && bottomY > rect.bottom))
-	{
+	if ((topY < 0 && bottomY < 0) || (topY > rect.bottom && bottomY > rect.bottom)) {
 		return;
 	}
 
@@ -266,7 +266,7 @@ std::set<std::string> ImDisasmView::getSelectedLineArguments() {
 	return args;
 }
 
-void ImDisasmView::drawArguments(ImDrawList *drawList, Rect rc, const DisassemblyLineInfo &line, int x, int y, ImColor textColor, const std::set<std::string> &currentArguments) {
+void ImDisasmView::drawArguments(ImDrawList *drawList, Rect rc, const DisassemblyLineInfo &line, float x, float y, ImColor textColor, const std::set<std::string> &currentArguments) {
 	if (line.params.empty()) {
 		return;
 	}
@@ -314,7 +314,13 @@ void ImDisasmView::drawArguments(ImDrawList *drawList, Rect rc, const Disassembl
 }
 
 void ImDisasmView::Draw(ImDrawList *drawList) {
+	if (!debugger->isAlive()) {
+		return;
+	}
+
 	// TODO: Don't need to do these every frame.
+	ImGui_PushFixedFont();
+
 	rowHeight_ = ImGui::GetTextLineHeightWithSpacing();
 	charWidth_ = ImGui::CalcTextSize("W", nullptr, false, -1.0f).x;
 
@@ -330,7 +336,7 @@ void ImDisasmView::Draw(ImDrawList *drawList) {
 	const bool is_active = ImGui::IsItemActive();   // Held
 
 	if (pressed) {
-		INFO_LOG(Log::System, "Pressed");
+		// INFO_LOG(Log::System, "Pressed");
 	}
 	ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
 
@@ -351,11 +357,6 @@ void ImDisasmView::Draw(ImDrawList *drawList) {
 	calculatePixelPositions();
 
 	visibleRows_ = (int)((rect.bottom - rect.top + rowHeight_ - 1.f) / rowHeight_);
-
-	auto memLock = Memory::Lock();
-	if (!debugger->isAlive()) {
-		return;
-	}
 
 	unsigned int address = windowStart_;
 	std::map<u32, float> addressPositions;
@@ -391,7 +392,7 @@ void ImDisasmView::Draw(ImDrawList *drawList) {
 
 		// display breakpoint, if any
 		bool enabled;
-		if (CBreakPoints::IsAddressBreakPoint(address, &enabled)) {
+		if (g_breakpoints.IsAddressBreakPoint(address, &enabled)) {
 			ImColor breakColor = 0xFF0000FF;
 			if (!enabled)
 				breakColor = 0xFF909090;
@@ -417,11 +418,11 @@ void ImDisasmView::Draw(ImDrawList *drawList) {
 			line.params += line.info.conditionMet ? "  ; true" : "  ; false";
 		}
 
-		drawArguments(drawList, rect, line, pixelPositions_.argumentsStart, rowY1 + 2, textColor, currentArguments);
+		drawArguments(drawList, rect, line, pixelPositions_.argumentsStart, rowY1 + 2.f, textColor, currentArguments);
 
 		// The actual opcode.
 		// Should be bold!
-		drawList->AddText(ImVec2(rect.left + pixelPositions_.opcodeStart, rect.top + rowY1 + 2), textColor, line.name.c_str());
+		drawList->AddText(ImVec2(rect.left + pixelPositions_.opcodeStart, rect.top + rowY1 + 2.f), textColor, line.name.c_str());
 
 		address += line.totalSize;
 	}
@@ -434,17 +435,21 @@ void ImDisasmView::Draw(ImDrawList *drawList) {
 	ImGuiIO& io = ImGui::GetIO();
 	ImVec2 mousePos = ImVec2(io.MousePos.x - canvas_p0.x, io.MousePos.y - canvas_p0.y);
 	if (is_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-		INFO_LOG(Log::CPU, "Mousedown %f,%f active:%d hover:%d", mousePos.x, mousePos.y, is_active, is_hovered);
+		// INFO_LOG(Log::System, "Mousedown %f,%f active:%d hover:%d", mousePos.x, mousePos.y, is_active, is_hovered);
 		onMouseDown(mousePos.x, mousePos.y, 1);
 	}
+	if (is_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+		// INFO_LOG(Log::CPU, "Mousedown %f,%f active:%d hover:%d", mousePos.x, mousePos.y, is_active, is_hovered);
+		onMouseDown(mousePos.x, mousePos.y, 2);
+	}
 	if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-		INFO_LOG(Log::CPU, "Mouseup %f,%f active:%d hover:%d", mousePos.x, mousePos.y, is_active, is_hovered);
+		// INFO_LOG(Log::System, "Mouseup %f,%f active:%d hover:%d", mousePos.x, mousePos.y, is_active, is_hovered);
 		if (is_hovered) {
 			onMouseUp(mousePos.x, mousePos.y, 1);
 		}
 	}
 	if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-		INFO_LOG(Log::CPU, "Mousedrag %f,%f active:%d hover:%d", mousePos.x, mousePos.y, is_active, is_hovered);
+		// INFO_LOG(Log::System, "Mousedrag %f,%f active:%d hover:%d", mousePos.x, mousePos.y, is_active, is_hovered);
 		if (is_hovered) {
 			onMouseMove(mousePos.x, mousePos.y, 1);
 		}
@@ -457,12 +462,8 @@ void ImDisasmView::Draw(ImDrawList *drawList) {
 			windowStart_ = manager.getNthNextAddress(windowStart_, 4);
 		}
 	}
-	if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
-		windowStart_ = manager.getNthNextAddress(windowStart_, visibleRows_);
-	}
-	if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
-		windowStart_ = manager.getNthPreviousAddress(windowStart_, visibleRows_);
-	}
+
+	ProcessKeyboardShortcuts(ImGui::IsItemFocused());
 
 	int coreStep = Core_GetSteppingCounter();
 	if (coreStep != lastSteppingCount_) {
@@ -474,7 +475,7 @@ void ImDisasmView::Draw(ImDrawList *drawList) {
 	}
 
 	if (pressed) {
-		INFO_LOG(Log::CPU, "Clicked %f,%f", mousePos.x, mousePos.y);
+		// INFO_LOG(Log::System, "Clicked %f,%f", mousePos.x, mousePos.y);
 		if (mousePos.x < rowHeight_) {  // Left column
 			// Toggle breakpoint at dragAddr_.
 			debugger->toggleBreakpoint(curAddress_);
@@ -484,6 +485,8 @@ void ImDisasmView::Draw(ImDrawList *drawList) {
 			bpPopup_ = false;
 		}
 	}
+
+	ImGui_PopFont();
 
 	ImGui::OpenPopupOnItemClick("context", ImGuiPopupFlags_MouseButtonRight);
 	PopupMenu();
@@ -531,13 +534,13 @@ void ImDisasmView::onChar(int c) {
 }
 
 
-void ImDisasmView::editBreakpoint() {
+void ImDisasmView::editBreakpoint(ImConfig &cfg) {
 	/*
 	BreakpointWindow win(wnd, debugger);
 
 	bool exists = false;
-	if (CBreakPoints::IsAddressBreakPoint(curAddress)) {
-		auto breakpoints = CBreakPoints::GetBreakpoints();
+	if (g_breakpoints.IsAddressBreakPoint(curAddress)) {
+		auto breakpoints = g_breakpoints.GetBreakpoints();
 		for (size_t i = 0; i < breakpoints.size(); i++) {
 			if (breakpoints[i].addr == curAddress) {
 				win.loadFromBreakpoint(breakpoints[i]);
@@ -553,71 +556,102 @@ void ImDisasmView::editBreakpoint() {
 
 	if (win.exec()) {
 		if (exists)
-			CBreakPoints::RemoveBreakPoint(curAddress);
+			g_breakpoints.RemoveBreakPoint(curAddress);
 		win.addBreakpoint();
 	}
 	*/
 }
 
-void ImDisasmView::onKeyDown(ImGuiKey key) {
+void ImDisasmView::ProcessKeyboardShortcuts(bool focused) {
+	if (!focused) {
+		return;
+	}
+
 	u32 windowEnd = manager.getNthNextAddress(windowStart_, visibleRows_);
 	keyTaken = true;
 
-	/*
-	if (KeyDownAsync(VK_CONTROL)) {
-		switch (tolower(wParam & 0xFFFF)) {
-		case 'f':
-		case 's':
-			search(false);
-			break;
-		case 'c':
-		case VK_INSERT:
-			CopyInstructions(selectRangeStart, selectRangeEnd, CopyInstructionsMode::DISASM);
-			break;
-		case 'x':
-			disassembleToFile();
-			break;
-		case 'a':
-			assembleOpcode(curAddress, "");
-			break;
-		case 'g':
-		{
-			u32 addr;
-			if (executeExpressionWindow(wnd, debugger, addr) == false) return;
-			gotoAddr(addr);
+	ImGuiIO& io = ImGui::GetIO();
+
+	if (io.KeyMods & ImGuiMod_Ctrl) {
+		if (ImGui::IsKeyPressed(ImGuiKey_F)) {
+			// Toggle the find popup
+			// ImGui::OpenPopup("disSearch");
 		}
-		break;
-		case 'e':	// edit breakpoint
-			editBreakpoint();
-			break;
-		case 'd':	// toogle breakpoint enabled
+		if (ImGui::IsKeyPressed(ImGuiKey_C) || ImGui::IsKeyPressed(ImGuiKey_Insert)) {
+			CopyInstructions(selectRangeStart_, selectRangeEnd_, CopyInstructionsMode::DISASM);
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_X)) {
+			// disassembleToFile();
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_A)) {
+			// assembleOpcode(curAddress, "");
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_G)) {
+			// Goto. should just focus on the goto input?
+			// u32 addr;
+			// if (executeExpressionWindow(wnd, debugger, addr) == false) return;
+			// gotoAddr(addr);
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+			// editBreakpoint();
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_D)) {
 			toggleBreakpoint(true);
-			break;
-		case VK_UP:
-			scrollWindow(-1);
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+			ScrollRelative(-1);
 			ScanVisibleFunctions();
-			break;
-		case VK_DOWN:
-			scrollWindow(1);
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+			ScrollRelative(1);
 			ScanVisibleFunctions();
-			break;
-		case VK_NEXT:
-			setCurAddress(manager.getNthPreviousAddress(windowEnd, 1), KeyDownAsync(VK_SHIFT));
-			break;
-		case VK_PRIOR:
-			setCurAddress(windowStart_, KeyDownAsync(VK_SHIFT));
-			break;
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
+			setCurAddress(manager.getNthPreviousAddress(windowEnd, 1), (io.KeyMods & ImGuiMod_Shift) != 0);
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
+			setCurAddress(windowStart_, ImGui::IsKeyDown(ImGuiKey_LeftShift));
 		}
 	} else {
+		if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
+			windowStart_ = manager.getNthNextAddress(windowStart_, visibleRows_);
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
+			windowStart_ = manager.getNthPreviousAddress(windowStart_, visibleRows_);
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_F3)) {
+			SearchNext(!ImGui::IsKeyPressed(ImGuiKey_LeftShift));
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+			setCurAddress(manager.getNthNextAddress(curAddress_, 1), (io.KeyMods & ImGuiMod_Shift) != 0);
+			scrollAddressIntoView();
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+			setCurAddress(manager.getNthPreviousAddress(curAddress_, 1), (io.KeyMods & ImGuiMod_Shift) != 0);
+			scrollAddressIntoView();
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+			FollowBranch();
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+			if (jumpStack_.empty()) {
+				gotoPC();
+			} else {
+				u32 addr = jumpStack_[jumpStack_.size() - 1];
+				jumpStack_.pop_back();
+				gotoAddr(addr);
+			}
+			return;
+		}
+		if (ImGui::IsKeyPressed(ImGuiKey_F9)) {
+			toggleBreakpoint();
+		}
+	}
+
+	/*
+	if (KeyDownAsync(VK_CONTROL)) {
+	} else {
 		switch (wParam & 0xFFFF) {
-		case VK_DOWN:
-			setCurAddress(manager.getNthNextAddress(curAddress, 1), KeyDownAsync(VK_SHIFT));
-			scrollAddressIntoView();
-			break;
-		case VK_UP:
-			setCurAddress(manager.getNthPreviousAddress(curAddress, 1), KeyDownAsync(VK_SHIFT));
-			scrollAddressIntoView();
-			break;
 		case VK_NEXT:
 			if (manager.getNthNextAddress(curAddress, 1) != windowEnd && curAddressIsVisible()) {
 				setCurAddress(manager.getNthPreviousAddress(windowEnd, 1), KeyDownAsync(VK_SHIFT));
@@ -636,27 +670,8 @@ void ImDisasmView::onKeyDown(ImGuiKey key) {
 				scrollAddressIntoView();
 			}
 			break;
-		case VK_LEFT:
-			if (jumpStack.empty())
-			{
-				gotoPC();
-			} else {
-				u32 addr = jumpStack[jumpStack.size() - 1];
-				jumpStack.pop_back();
-				gotoAddr(addr);
-			}
-			return;
-		case VK_RIGHT:
-			FollowBranch();
-			return;
 		case VK_TAB:
 			displaySymbols_ = !displaySymbols_;
-			break;
-		case VK_SPACE:
-			debugger->toggleBreakpoint(curAddress);
-			break;
-		case VK_F3:
-			search(true);
 			break;
 		default:
 			keyTaken = false;
@@ -684,30 +699,30 @@ bool ImDisasmView::curAddressIsVisible() {
 
 void ImDisasmView::toggleBreakpoint(bool toggleEnabled) {
 	bool enabled;
-	if (CBreakPoints::IsAddressBreakPoint(curAddress_, &enabled)) {
+	if (g_breakpoints.IsAddressBreakPoint(curAddress_, &enabled)) {
 		if (!enabled) {
 			// enable disabled breakpoints
-			CBreakPoints::ChangeBreakPoint(curAddress_, true);
-		} else if (!toggleEnabled && CBreakPoints::GetBreakPointCondition(curAddress_) != nullptr) {
+			g_breakpoints.ChangeBreakPoint(curAddress_, true);
+		} else if (!toggleEnabled && g_breakpoints.GetBreakPointCondition(curAddress_) != nullptr) {
 			// don't just delete a breakpoint with a custom condition
 			/*
 			int ret = MessageBox(wnd, L"This breakpoint has a custom condition.\nDo you want to remove it?", L"Confirmation", MB_YESNO);
 			if (ret == IDYES)
-				CBreakPoints::RemoveBreakPoint(curAddress);
+				g_breakpoints.RemoveBreakPoint(curAddress);
 			*/
 		} else if (toggleEnabled) {
 			// disable breakpoint
-			CBreakPoints::ChangeBreakPoint(curAddress_, false);
+			g_breakpoints.ChangeBreakPoint(curAddress_, false);
 		} else {
 			// otherwise just remove breakpoint
-			CBreakPoints::RemoveBreakPoint(curAddress_);
+			g_breakpoints.RemoveBreakPoint(curAddress_);
 		}
 	} else {
-		CBreakPoints::AddBreakPoint(curAddress_);
+		g_breakpoints.AddBreakPoint(curAddress_);
 	}
 }
 
-void ImDisasmView::onMouseDown(int x, int y, int button) {
+void ImDisasmView::onMouseDown(float x, float y, int button) {
 	u32 newAddress = yToAddress(y);
 	bool extend = ImGui::IsKeyDown(ImGuiKey_LeftShift);
 	if (button == 1) {
@@ -720,6 +735,20 @@ void ImDisasmView::onMouseDown(int x, int y, int button) {
 			extend = true;
 	}
 	setCurAddress(newAddress, extend);
+}
+
+void ImDisasmView::onMouseMove(float x, float y, int button) {
+	if ((button & 1) != 0) {
+		setCurAddress(yToAddress(y), ImGui::IsKeyDown(ImGuiKey_LeftShift));
+	}
+}
+
+void ImDisasmView::onMouseUp(float x, float y, int button) {
+	if (button == 1) {
+		if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
+			setCurAddress(yToAddress(y), true);
+		}
+	}
 }
 
 void ImDisasmView::CopyInstructions(u32 startAddr, u32 endAddr, CopyInstructionsMode mode) {
@@ -758,15 +787,8 @@ void ImDisasmView::NopInstructions(u32 selectRangeStart, u32 selectRangeEnd) {
 	}
 }
 
-void ImDisasmView::onMouseUp(int x, int y, int button) {
-	if (button == 1) {
-		if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
-			setCurAddress(yToAddress(y), true);
-		}
-	}
-}
-
 void ImDisasmView::PopupMenu() {
+	bool renameFunctionPopup = false;
 	if (ImGui::BeginPopup("context")) {
 		ImGui::Text("Address: %08x", curAddress_);
 		if (ImGui::MenuItem("Toggle breakpoint", "F9")) {
@@ -786,16 +808,6 @@ void ImDisasmView::PopupMenu() {
 		}
 		ImGui::Separator();
 
-		/*
-		if (ImGui::MenuItem("Edit symbol")) {
-			EditSymbolsWindow esw(wnd, debugger);
-			if (esw.exec()) {
-				esw.eval();
-				SendMessage(GetParent(wnd), WM_DEB_MAPLOADED, 0, 0);
-				redraw();
-			}
-		}
-		*/
 		if (ImGui::MenuItem("Set PC to here")) {
 			debugger->setPC(curAddress_);
 		}
@@ -803,8 +815,11 @@ void ImDisasmView::PopupMenu() {
 			FollowBranch();
 		}
 		if (ImGui::MenuItem("Run to here")) {
-			// CBreakPoints::AddBreakPoint(pos, true);
-			// Core_Resume();
+			g_breakpoints.AddBreakPoint(curAddress_, true);
+			g_breakpoints.SetSkipFirst(curAddress_);
+			if (Core_IsStepping()) {
+				Core_Resume();
+			}
 		}
 		ImGui::Separator();
 		if (ImGui::MenuItem("Assemble")) {
@@ -815,24 +830,14 @@ void ImDisasmView::PopupMenu() {
 		}
 		ImGui::Separator();
 		if (ImGui::MenuItem("Rename function")) {
-			u32 funcBegin = g_symbolMap->GetFunctionStart(curAddress_);
-			/*
-			if (funcBegin != -1) {
-				char name[256];
-				std::string newname;
-				truncate_cpy(name, g_symbolMap->GetLabelString(funcBegin).c_str());
-				if (InputBox_GetString(MainWindow::GetHInstance(), MainWindow::GetHWND(), L"New function name", name, newname)) {
-					g_symbolMap->SetLabelName(newname.c_str(), funcBegin);
-					u32 funcSize = g_symbolMap->GetFunctionSize(funcBegin);
-					MIPSAnalyst::RegisterFunction(funcBegin, funcSize, newname.c_str());
-					MIPSAnalyst::UpdateHashMap();
-					MIPSAnalyst::ApplyHashMap();
-					mapReloaded_ = true;
-				}
+			funcBegin_ = g_symbolMap->GetFunctionStart(curAddress_);
+			if (funcBegin_ != -1) {
+				truncate_cpy(funcNameTemp_, g_symbolMap->GetLabelString(funcBegin_).c_str());
+				renameFunctionPopup = true;
+				statusBarText_ = funcNameTemp_;
 			} else {
-				MessageBox(MainWindow::GetHWND(), L"No symbol selected", 0, 0);
+				statusBarText_ = "No function here";
 			}
-			*/
 		}
 		if (ImGui::MenuItem("Remove function")) {
 			u32 funcBegin = g_symbolMap->GetFunctionStart(curAddress_);
@@ -889,16 +894,32 @@ void ImDisasmView::PopupMenu() {
 		}
 		ImGui::EndPopup();
 	}
-}
 
-void ImDisasmView::onMouseMove(int x, int y, int button) {
-	if ((button & 1) != 0) {
-		setCurAddress(yToAddress(y), ImGui::IsKeyDown(ImGuiKey_LeftShift));
+	// Sub popups here
+	if (renameFunctionPopup) {
+		ImGui::OpenPopup("renameFunction");
+	}
+	// ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing())
+	if (ImGui::BeginPopup("renameFunction")) {
+		std::string symName = g_symbolMap->GetDescription(funcBegin_);
+		ImGui::Text("Rename function %s", symName.c_str());
+		if (ImGui::IsWindowAppearing()) {
+			ImGui::SetKeyboardFocusHere();
+		}
+		if (ImGui::InputText("Name", funcNameTemp_, sizeof(funcNameTemp_), ImGuiInputTextFlags_EnterReturnsTrue) && strlen(funcNameTemp_)) {
+			g_symbolMap->SetLabelName(funcNameTemp_, funcBegin_);
+			u32 funcSize = g_symbolMap->GetFunctionSize(funcBegin_);
+			MIPSAnalyst::RegisterFunction(funcBegin_, funcSize, funcNameTemp_);
+			MIPSAnalyst::UpdateHashMap();
+			MIPSAnalyst::ApplyHashMap();
+			mapReloaded_ = true;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
 	}
 }
 
 void ImDisasmView::updateStatusBarText() {
-	auto memLock = Memory::Lock();
 	if (!PSP_IsInited())
 		return;
 
@@ -997,8 +1018,8 @@ void ImDisasmView::updateStatusBarText() {
 	}
 }
 
-u32 ImDisasmView::yToAddress(int y) {
-	int line = y / rowHeight_;
+u32 ImDisasmView::yToAddress(float y) {
+	int line = (int)(y / rowHeight_);
 	return manager.getNthNextAddress(windowStart_, line);
 }
 
@@ -1009,26 +1030,22 @@ void ImDisasmView::calculatePixelPositions() {
 	pixelPositions_.arrowsStart = pixelPositions_.argumentsStart + 30 * charWidth_;
 }
 
-void ImDisasmView::search(bool continueSearch) {
-	auto memLock = Memory::Lock();
-	u32 searchAddress;
-
-	if (continueSearch == false || searchQuery_[0] == 0) {
-		/*
-		if (InputBox_GetString(MainWindow::GetHInstance(), MainWindow::GetHWND(), L"Search for:", searchQuery, searchQuery) == false
-			|| searchQuery[0] == 0) {
-			SetFocus(wnd);
-			return;
-		}
-		*/
-
-		for (size_t i = 0; i < searchQuery_.size(); i++) {
-			searchQuery_[i] = tolower(searchQuery_[i]);
-		}
-		searchAddress = manager.getNthNextAddress(curAddress_, 1);
-	} else {
-		searchAddress = manager.getNthNextAddress(matchAddress_, 1);
+void ImDisasmView::Search(std::string_view needle) {
+	searchQuery_ = needle;
+	for (size_t i = 0; i < searchQuery_.size(); i++) {
+		searchQuery_[i] = tolower(searchQuery_[i]);
 	}
+	matchAddress_ = curAddress_;
+	SearchNext(true);
+}
+
+void ImDisasmView::SearchNext(bool forward) {
+	if (searchQuery_.empty()) {
+		return;
+	}
+
+	// Note: Search will replace matchAddress_ with the current address.
+	u32 searchAddress = manager.getNthNextAddress(matchAddress_, 1);
 
 	// limit address to sensible ranges
 	if (searchAddress < 0x04000000)
@@ -1081,13 +1098,13 @@ void ImDisasmView::search(bool continueSearch) {
 		if (searchAddress >= 0x04200000 && searchAddress < 0x08000000) searchAddress = 0x08000000;
 	}
 
-	// MessageBox(wnd, L"Not found", L"Search", MB_OK);
+	statusBarText_ = "Not found: ";
+	statusBarText_.append(searchQuery_);
 
 	searching_ = false;
 }
 
 std::string ImDisasmView::disassembleRange(u32 start, u32 size) {
-	auto memLock = Memory::Lock();
 	std::string result;
 
 	// gather all branch targets without labels

@@ -22,7 +22,6 @@
 
 #include "Common/File/VFS/VFS.h"
 #include "Common/GPU/thin3d.h"
-#include "Common/Log.h"
 #include "Core/ConfigValues.h"
 
 class TextureReplacer;
@@ -58,6 +57,7 @@ enum class ReplacementState : uint32_t {
 	NOT_FOUND,  // Also used on error loading the images.
 	ACTIVE,
 	CANCEL_INIT,
+	COUNT,  // Not a valid state
 };
 
 const char *StateString(ReplacementState state);
@@ -120,9 +120,6 @@ public:
 
 	void SetState(ReplacementState state) {
 		_dbg_assert_(state != state_);
-#ifdef _DEBUG
-		// WARN_LOG(Log::G3D, "Texture %s changed state from %s to %s", logId_.c_str(), StateString(state_), StateString(state));
-#endif
 		state_ = state;
 	}
 
@@ -166,6 +163,10 @@ public:
 	Draw::DataFormat Format() const {
 		_dbg_assert_(State() == ReplacementState::ACTIVE);
 		return fmt;
+	}
+
+	const ReplacementDesc &Desc() const {
+		return desc_;
 	}
 
 	u8 AlphaStatus() const {

@@ -64,30 +64,30 @@ alignas(16) static const uint32_t lowBytesMask[4] = {
 
 u32 IRRunBreakpoint(u32 pc) {
 	// Should we skip this breakpoint?
-	uint32_t skipFirst = CBreakPoints::CheckSkipFirst();
+	uint32_t skipFirst = g_breakpoints.CheckSkipFirst();
 	if (skipFirst == pc || skipFirst == currentMIPS->pc)
 		return 0;
 
 	// Did we already hit one?
-	if (coreState != CORE_RUNNING && coreState != CORE_NEXTFRAME)
+	if (coreState != CORE_RUNNING_CPU && coreState != CORE_NEXTFRAME)
 		return 1;
 
-	CBreakPoints::ExecBreakPoint(pc);
-	return coreState != CORE_RUNNING ? 1 : 0;
+	g_breakpoints.ExecBreakPoint(pc);
+	return coreState != CORE_RUNNING_CPU ? 1 : 0;
 }
 
 u32 IRRunMemCheck(u32 pc, u32 addr) {
 	// Should we skip this breakpoint?
-	uint32_t skipFirst = CBreakPoints::CheckSkipFirst();
+	uint32_t skipFirst = g_breakpoints.CheckSkipFirst();
 	if (skipFirst == pc || skipFirst == currentMIPS->pc)
 		return 0;
 
 	// Did we already hit one?
-	if (coreState != CORE_RUNNING && coreState != CORE_NEXTFRAME)
+	if (coreState != CORE_RUNNING_CPU && coreState != CORE_NEXTFRAME)
 		return 1;
 
-	CBreakPoints::ExecOpMemCheck(addr, pc);
-	return coreState != CORE_RUNNING ? 1 : 0;
+	g_breakpoints.ExecOpMemCheck(addr, pc);
+	return coreState != CORE_RUNNING_CPU ? 1 : 0;
 }
 
 void IRApplyRounding(MIPSState *mips) {
@@ -1148,7 +1148,7 @@ u32 IRInterpret(MIPSState *mips, const IRInst *inst) {
 		{
 			MIPSOpcode op(inst->constant);
 			CallSyscall(op);
-			if (coreState != CORE_RUNNING)
+			if (coreState != CORE_RUNNING_CPU)
 				CoreTiming::ForceCheck();
 			break;
 		}

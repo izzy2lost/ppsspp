@@ -72,20 +72,14 @@
 #include "Common/ExceptionHandlerSetup.h"
 #include "Core/HLE/sceAudiocodec.h"
 #include "GPU/GPUState.h"
-#include "GPU/GPUInterface.h"
+#include "GPU/GPUCommon.h"
+#include "GPU/Debugger/Stepping.h"
 #include "GPU/Debugger/RecordFormat.h"
 #include "Core/RetroAchievements.h"
 
 enum CPUThreadState {
 	CPU_THREAD_NOT_RUNNING,
-	CPU_THREAD_PENDING,
-	CPU_THREAD_STARTING,
 	CPU_THREAD_RUNNING,
-	CPU_THREAD_SHUTDOWN,
-	CPU_THREAD_QUIT,
-
-	CPU_THREAD_EXECUTE,
-	CPU_THREAD_RESUME,
 };
 
 MetaFileSystem pspFileSystem;
@@ -95,19 +89,9 @@ CoreParameter g_CoreParameter;
 static FileLoader *g_loadedFile;
 // For background loading thread.
 static std::mutex loadingLock;
-// For loadingReason updates.
-static std::mutex loadingReasonLock;
-static std::string loadingReason;
-
-bool audioInitialized;
 
 bool coreCollectDebugStats = false;
 static int coreCollectDebugStatsCounter = 0;
-
-// This can be read and written from ANYWHERE.
-volatile CoreState coreState = CORE_STEPPING;
-// If true, core state has been changed, but JIT has probably not noticed yet.
-volatile bool coreStatePending = false;
 
 static volatile CPUThreadState cpuThreadState = CPU_THREAD_NOT_RUNNING;
 
@@ -119,9 +103,6 @@ static volatile bool pspIsInited = false;
 static volatile bool pspIsIniting = false;
 static volatile bool pspIsQuitting = false;
 static volatile bool pspIsRebooting = false;
-
-// This is called on EmuThread before RunLoop.
-void Core_ProcessStepping(MIPSDebugInterface *cpu);
 
 void ResetUIState() {
 	globalUIState = UISTATE_MENU;
@@ -387,13 +368,7 @@ void UpdateLoadedFile(FileLoader *fileLoader) {
 	g_loadedFile = fileLoader;
 }
 
-void Core_UpdateState(CoreState newState) {
-	if ((coreState == CORE_RUNNING || coreState == CORE_NEXTFRAME) && newState != CORE_RUNNING)
-		coreStatePending = true;
-	coreState = newState;
-}
-
-void Core_UpdateDebugStats(bool collectStats) {
+void PSP_UpdateDebugStats(bool collectStats) {
 	bool newState = collectStats || coreCollectDebugStatsCounter > 0;
 	if (coreCollectDebugStats != newState) {
 		coreCollectDebugStats = newState;
@@ -406,7 +381,7 @@ void Core_UpdateDebugStats(bool collectStats) {
 	}
 }
 
-void Core_ForceDebugStats(bool enable) {
+void PSP_ForceDebugStats(bool enable) {
 	if (enable) {
 		coreCollectDebugStatsCounter++;
 	} else {
@@ -440,7 +415,6 @@ bool PSP_InitStart(const CoreParameter &coreParam, std::string *error_string) {
 	}
 	g_CoreParameter.errorString.clear();
 	pspIsIniting = true;
-	PSP_SetLoading("Loading game...");
 
 	Path filename = g_CoreParameter.fileToStart;
 	FileLoader *loadedFile = ResolveFileLoaderTarget(ConstructFileLoader(filename));
@@ -499,7 +473,7 @@ bool PSP_InitUpdate(std::string *error_string) {
 	}
 
 	if (success && gpu == nullptr) {
-		PSP_SetLoading("Starting graphics...");
+		INFO_LOG(Log::System, "Starting graphics...");
 		Draw::DrawContext *draw = g_CoreParameter.graphicsContext ? g_CoreParameter.graphicsContext->GetDrawContext() : nullptr;
 		success = GPU_Init(g_CoreParameter.graphicsContext, draw);
 		if (!success) {
@@ -536,7 +510,7 @@ bool PSP_Init(const CoreParameter &coreParam, std::string *error_string) {
 		return false;
 
 	while (!PSP_InitUpdate(error_string))
-		sleep_ms(10);
+		sleep_ms(10, "psp-init-poll");
 	return pspIsInited;
 }
 
@@ -569,7 +543,7 @@ void PSP_Shutdown() {
 
 	// Make sure things know right away that PSP memory, etc. is going away.
 	pspIsQuitting = !pspIsRebooting;
-	if (coreState == CORE_RUNNING)
+	if (coreState == CORE_RUNNING_CPU)
 		Core_Stop();
 
 	if (g_Config.bFuncHashMap) {
@@ -620,42 +594,12 @@ void PSP_RunLoopWhileState() {
 	// We just run the CPU until we get to vblank. This will quickly sync up pretty nicely.
 	// The actual number of cycles doesn't matter so much here as we will break due to CORE_NEXTFRAME, most of the time hopefully...
 	int blockTicks = usToCycles(1000000 / 10);
-
 	// Run until CORE_NEXTFRAME
-	while (coreState == CORE_RUNNING || coreState == CORE_STEPPING) {
-		PSP_RunLoopFor(blockTicks);
-		if (coreState == CORE_STEPPING) {
-			// Keep the UI responsive.
-			break;
-		}
-	}
-}
-
-void PSP_RunLoopUntil(u64 globalticks) {
-	if (coreState == CORE_POWERDOWN || coreState == CORE_BOOT_ERROR || coreState == CORE_RUNTIME_ERROR) {
-		return;
-	} else if (coreState == CORE_STEPPING) {
-		Core_ProcessStepping(currentDebugMIPS);
-		return;
-	}
-
-	if (coreState != CORE_NEXTFRAME) {  // Can be set by SaveState as well as by sceDisplay
-		mipsr4k.RunLoopUntil(globalticks);
-	}
+	PSP_RunLoopFor(blockTicks);
 }
 
 void PSP_RunLoopFor(int cycles) {
-	PSP_RunLoopUntil(CoreTiming::GetTicks() + cycles);
-}
-
-void PSP_SetLoading(const std::string &reason) {
-	std::lock_guard<std::mutex> guard(loadingReasonLock);
-	loadingReason = reason;
-}
-
-std::string PSP_GetLoading() {
-	std::lock_guard<std::mutex> guard(loadingReasonLock);
-	return loadingReason;
+	Core_RunLoopUntil(CoreTiming::GetTicks() + cycles);
 }
 
 Path GetSysDirectory(PSPDirectories directoryType) {
@@ -755,4 +699,19 @@ bool CreateSysDirectories() {
 		}
 	}
 	return true;
+}
+
+const char *CoreStateToString(CoreState state) {
+	switch (state) {
+	case CORE_RUNNING_CPU: return "RUNNING_CPU";
+	case CORE_NEXTFRAME: return "NEXTFRAME";
+	case CORE_STEPPING_CPU: return "STEPPING_CPU";
+	case CORE_POWERUP: return "POWERUP";
+	case CORE_POWERDOWN: return "POWERDOWN";
+	case CORE_BOOT_ERROR: return "BOOT_ERROR";
+	case CORE_RUNTIME_ERROR: return "RUNTIME_ERROR";
+	case CORE_STEPPING_GE: return "STEPPING_GE";
+	case CORE_RUNNING_GE: return "RUNNING_GE";
+	default: return "N/A";
+	}
 }

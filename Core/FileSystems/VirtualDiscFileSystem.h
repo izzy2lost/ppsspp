@@ -43,7 +43,7 @@ public:
 	int      Ioctl(u32 handle, u32 cmd, u32 indataPtr, u32 inlen, u32 outdataPtr, u32 outlen, int &usec) override;
 	PSPDevType DevType(u32 handle) override;
 	std::vector<PSPFileInfo> GetDirListing(const std::string &path, bool *exists = nullptr) override;
-	FileSystemFlags Flags() override { return FileSystemFlags::UMD; }
+	FileSystemFlags Flags() const override { return FileSystemFlags::UMD; }
 	u64  FreeDiskSpace(const std::string &path) override { return 0; }
 
 	// unsupported operations
@@ -56,12 +56,14 @@ public:
 
 	bool ComputeRecursiveDirSizeIfFast(const std::string &path, int64_t *size) override { return false; }
 
+	void Describe(char *buf, size_t size) const override { snprintf(buf, size, "VirtualDisc: %s", basePath.ToVisualString().c_str()); }  // TODO: Ask the fileLoader about the origins
+
 private:
 	void LoadFileListIndex();
 	// Warning: modifies input string.
 	int getFileListIndex(std::string &fileName);
-	int getFileListIndex(u32 accessBlock, u32 accessSize, bool blockMode = false);
-	Path GetLocalPath(std::string localpath);
+	int getFileListIndex(u32 accessBlock, u32 accessSize, bool blockMode = false) const;
+	Path GetLocalPath(std::string localpath) const;
 
 	typedef void *HandlerLibrary;
 	typedef int HandlerHandle;

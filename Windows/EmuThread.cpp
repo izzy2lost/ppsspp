@@ -75,6 +75,48 @@ bool MainThread_Ready() {
 	return g_inLoop;
 }
 
+static bool Core_Run(GraphicsContext *ctx) {
+	System_Notify(SystemNotification::DISASSEMBLY);
+	while (true) {
+		if (GetUIState() != UISTATE_INGAME) {
+			Core_StateProcessed();
+			if (GetUIState() == UISTATE_EXIT) {
+				// Not sure why we do a final frame here?
+				NativeFrame(ctx);
+				return false;
+			}
+			NativeFrame(ctx);
+			continue;
+		}
+
+		switch (coreState) {
+		case CORE_RUNNING_CPU:
+		case CORE_STEPPING_CPU:
+		case CORE_RUNNING_GE:  // Shouldn't be in this state between frames
+		case CORE_STEPPING_GE:  // This is OK though.
+			// enter a fast runloop
+			NativeFrame(ctx);
+			if (coreState == CORE_POWERDOWN) {
+				return true;
+			}
+			break;
+		case CORE_POWERDOWN:
+			// Need to step the loop.
+			NativeFrame(ctx);
+			return true;
+
+		case CORE_POWERUP:
+		case CORE_BOOT_ERROR:
+		case CORE_RUNTIME_ERROR:
+			// Exit loop!!
+			return true;
+
+		case CORE_NEXTFRAME:
+			return true;
+		}
+	}
+}
+
 static void EmuThreadFunc(GraphicsContext *graphicsContext) {
 	SetCurrentThreadName("EmuThread");
 
@@ -311,7 +353,7 @@ void MainThreadFunc() {
 		// Process the shutdown.  Without this, non-GL delays 800ms on shutdown.
 		Core_Run(g_graphicsContext);
 	}
-	Core_WaitInactive(800);
+	Core_WaitInactive();
 
 	g_inLoop = false;
 

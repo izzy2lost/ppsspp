@@ -1,8 +1,10 @@
 #include "ext/imgui/imgui.h"
+#include "Common/File/Path.h"
 #include "Common/Input/KeyCodes.h"
 #include "Common/Data/Encoding/Utf8.h"
 #include "Common/System/Display.h"
 #include "Common/TimeUtil.h"
+#include "Common/StringUtils.h"
 #include "Common/Log.h"
 
 #include "imgui_impl_platform.h"
@@ -24,8 +26,6 @@ void ImGui_ImplPlatform_KeyEvent(const KeyInput &key) {
 			ImGuiKey keyCode = KeyCodeToImGui(key.keyCode);
 			if (keyCode != ImGuiKey_None) {
 				io.AddKeyEvent(keyCode, true);
-			} else {
-				WARN_LOG(Log::System, "KeyDown: Unmapped ImGui keycode conversion from %d", key.keyCode);
 			}
 			break;
 		}
@@ -35,8 +35,6 @@ void ImGui_ImplPlatform_KeyEvent(const KeyInput &key) {
 		ImGuiKey keyCode = KeyCodeToImGui(key.keyCode);
 		if (keyCode != ImGuiKey_None) {
 			io.AddKeyEvent(keyCode, false);
-		} else {
-			WARN_LOG(Log::System, "KeyUp: Unmapped ImGui keycode conversion from %d", key.keyCode);
 		}
 	}
 	if (key.flags & KEY_CHAR) {
@@ -75,6 +73,12 @@ void ImGui_ImplPlatform_TouchEvent(const TouchInput &touch) {
 		if (touch.buttons & 2)
 			io.AddMouseButtonEvent(1, false);
 	}
+}
+
+void ImGui_ImplPlatform_Init(const Path &configPath) {
+	static char path[1024];
+	truncate_cpy(path, configPath.ToString());
+	ImGui::GetIO().IniFilename = path;
 }
 
 void ImGui_ImplPlatform_AxisEvent(const AxisInput &axis) {
@@ -222,6 +226,8 @@ ImGuiKey KeyCodeToImGui(InputKeyCode keyCode) {
 	case NKCODE_EXT_MOUSEWHEEL_UP:
 		// Keys ignored for imgui
 	 	return ImGuiKey_None;
+	case NKCODE_EXT_PRINTSCREEN:
+		return ImGuiKey_PrintScreen;
 
 	default:
 		WARN_LOG(Log::System, "Unmapped ImGui keycode conversion from %d", keyCode);

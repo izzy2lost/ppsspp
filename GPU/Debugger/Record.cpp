@@ -38,7 +38,7 @@
 #include "Core/System.h"
 #include "Core/ThreadPools.h"
 #include "GPU/Common/GPUDebugInterface.h"
-#include "GPU/GPUInterface.h"
+#include "GPU/GPUCommon.h"
 #include "GPU/GPUState.h"
 #include "GPU/ge_constants.h"
 #include "GPU/Common/TextureDecoder.h"
@@ -207,7 +207,7 @@ static Path WriteRecording() {
 
 	FILE *fp = File::OpenCFile(filename, "wb");
 	Header header{};
-	strncpy(header.magic, HEADER_MAGIC, sizeof(header.magic));
+	memcpy(header.magic, HEADER_MAGIC, sizeof(header.magic));
 	header.version = VERSION;
 	strncpy(header.gameID, g_paramSFO.GetDiscID().c_str(), sizeof(header.gameID));
 	fwrite(&header, sizeof(header), 1, fp);

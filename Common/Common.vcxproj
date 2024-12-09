@@ -456,8 +456,10 @@
     <ClInclude Include="BitSet.h" />
     <ClInclude Include="Buffer.h" />
     <ClInclude Include="Data\Collections\ConstMap.h" />
+    <ClInclude Include="Data\Collections\CharQueue.h" />
     <ClInclude Include="Data\Collections\FixedSizeQueue.h" />
     <ClInclude Include="Data\Collections\Hashmaps.h" />
+    <ClInclude Include="Data\Collections\LinkedList.h" />
     <ClInclude Include="Data\Collections\Slice.h" />
     <ClInclude Include="Data\Collections\ThreadSafeList.h" />
     <ClInclude Include="Data\Collections\TinySet.h" />
@@ -591,6 +593,7 @@
     <ClInclude Include="Crypto\sha256.h" />
     <ClInclude Include="DbgNew.h" />
     <ClInclude Include="ExceptionHandlerSetup.h" />
+    <ClInclude Include="GhidraClient.h" />
     <ClInclude Include="GraphicsContext.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="Log\LogManager.h" />
@@ -1021,6 +1024,7 @@
     <ClCompile Include="GPU\Vulkan\VulkanRenderManager.cpp" />
     <ClCompile Include="Input\GestureDetector.cpp" />
     <ClCompile Include="Input\InputState.cpp" />
+    <ClCompile Include="GhidraClient.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Math\curves.cpp" />
     <ClCompile Include="Math\expression_parser.cpp" />

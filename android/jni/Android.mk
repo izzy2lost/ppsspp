@@ -373,6 +373,7 @@ EXEC_AND_LIB_FILES := \
   $(SRC)/Common/CPUDetect.cpp \
   $(SRC)/Common/ExceptionHandlerSetup.cpp \
   $(SRC)/Common/FakeCPUDetect.cpp \
+  $(SRC)/Common/GhidraClient.cpp \
   $(SRC)/Common/Log.cpp \
   $(SRC)/Common/Log/LogManager.cpp \
   $(SRC)/Common/LogReporting.cpp \
@@ -550,6 +551,7 @@ EXEC_AND_LIB_FILES := \
   $(SRC)/GPU/Debugger/GECommandTable.cpp \
   $(SRC)/GPU/Debugger/Playback.cpp \
   $(SRC)/GPU/Debugger/Record.cpp \
+  $(SRC)/GPU/Debugger/State.cpp \
   $(SRC)/GPU/Debugger/Stepping.cpp \
   $(SRC)/GPU/GLES/FramebufferManagerGLES.cpp \
   $(SRC)/GPU/GLES/StencilBufferGLES.cpp \
@@ -875,7 +877,9 @@ LOCAL_SRC_FILES := \
   $(SRC)/android/jni/AndroidAudio.cpp \
   $(SRC)/android/jni/OpenSLContext.cpp \
   $(SRC)/UI/ImDebugger/ImDebugger.cpp \
+  $(SRC)/UI/ImDebugger/ImGe.cpp \
   $(SRC)/UI/ImDebugger/ImDisasmView.cpp \
+  $(SRC)/UI/ImDebugger/ImStructViewer.cpp \
   $(SRC)/UI/AudioCommon.cpp \
   $(SRC)/UI/BackgroundAudio.cpp \
   $(SRC)/UI/DiscordIntegration.cpp \

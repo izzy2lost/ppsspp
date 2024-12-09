@@ -21,7 +21,7 @@
 #include "Common/GPU/OpenGL/GLCommon.h"
 #include "Common/GPU/OpenGL/GLRenderManager.h"
 #include "Common/GPU/thin3d.h"
-#include "GPU/GPUInterface.h"
+#include "GPU/GPUCommon.h"
 #include "GPU/GPUState.h"
 #include "GPU/Common/TextureCacheCommon.h"
 
@@ -63,7 +63,7 @@ protected:
 	void ReleaseTexture(TexCacheEntry *entry, bool delete_them) override;
 
 	void BindAsClutTexture(Draw::Texture *tex, bool smooth) override;
-	void *GetNativeTextureView(const TexCacheEntry *entry) override;
+	void *GetNativeTextureView(const TexCacheEntry *entry, bool flat) const override;
 
 private:
 	void ApplySamplingParams(const SamplerCacheKey &key) override;

@@ -88,9 +88,9 @@ void WebSocketCPUResume(DebuggerRequest &req) {
 		return req.Fail("CPU not stepping");
 	}
 
-	CBreakPoints::SetSkipFirst(currentMIPS->pc);
+	g_breakpoints.SetSkipFirst(currentMIPS->pc);
 	if (currentMIPS->inDelaySlot) {
-		Core_RequestSingleStep(CPUStepType::Into, 1);
+		Core_RequestCPUStep(CPUStepType::Into, 1);
 	}
 	Core_Resume();
 }

@@ -6,6 +6,7 @@
     <ClInclude Include="CommonFuncs.h" />
     <ClInclude Include="CommonTypes.h" />
     <ClInclude Include="CPUDetect.h" />
+    <ClInclude Include="GhidraClient.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="MemArena.h" />
     <ClInclude Include="MemoryUtil.h" />
@@ -670,6 +671,12 @@
     <ClInclude Include="..\ext\lua\lzio.h">
       <Filter>ext\lua</Filter>
     </ClInclude>
+    <ClInclude Include="Data\Collections\CharQueue.h">
+      <Filter>Data\Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="Data\Collections\LinkedList.h">
+      <Filter>Data\Collections</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ABI.cpp" />
@@ -705,6 +712,7 @@
       <Filter>Serialize</Filter>
     </ClCompile>
     <ClCompile Include="TimeUtil.cpp" />
+    <ClCompile Include="GhidraClient.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="SysError.cpp" />
     <ClCompile Include="..\ext\libpng17\png.c">

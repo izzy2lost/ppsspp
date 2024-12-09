@@ -4,7 +4,7 @@
 #include "Windows/resource.h"
 #include "Windows/W32Util/DialogManager.h"
 #include "Windows/W32Util/Misc.h"
-#include "GPU/Common/GPUDebugInterface.h"
+#include "GPU/GPUCommon.h"
 
 class CtrlDisplayListView;
 
@@ -18,7 +18,7 @@ public:
 	}
 protected:
 	bool WindowMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT &returnValue) override { return false; }
-	void GetColumnText(wchar_t *dest, int row, int col) override;
+	void GetColumnText(wchar_t *dest, size_t destSize, int row, int col) override;
 	int GetRowCount() override { return list.stackptr; }
 	void OnDoubleClick(int itemIndex, int column) override;
 private:
@@ -35,7 +35,7 @@ public:
 	}
 protected:
 	bool WindowMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT &returnValue) override;
-	void GetColumnText(wchar_t *dest, int row, int col) override;
+	void GetColumnText(wchar_t *dest, size_t destSize, int row, int col) override;
 	int GetRowCount() override { return (int) lists.size(); }
 	void OnDoubleClick(int itemIndex, int column) override;
 private:

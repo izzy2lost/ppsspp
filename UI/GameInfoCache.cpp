@@ -201,17 +201,18 @@ std::vector<Path> GameInfo::GetSaveDataDirectories() {
 	_dbg_assert_(hasFlags & GameInfoFlags::PARAM_SFO);  // so we know we have the ID.
 	Path memc = GetSysDirectory(DIRECTORY_SAVEDATA);
 
-	std::vector<File::FileInfo> dirs;
-	File::GetFilesInDir(memc, &dirs);
-
 	std::vector<Path> directories;
 	if (id.size() < 5) {
+		// Invalid game ID.
 		return directories;
 	}
+
+	std::vector<File::FileInfo> dirs;
+	const std::string &prefix = id;
+	File::GetFilesInDir(memc, &dirs, nullptr, 0, prefix);
+
 	for (size_t i = 0; i < dirs.size(); i++) {
-		if (startsWith(dirs[i].name, id)) {
-			directories.push_back(dirs[i].fullName);
-		}
+		directories.push_back(dirs[i].fullName);
 	}
 
 	return directories;
@@ -302,14 +303,8 @@ void GameInfo::DisposeFileLoader() {
 bool GameInfo::DeleteAllSaveData() {
 	std::vector<Path> saveDataDir = GetSaveDataDirectories();
 	for (size_t j = 0; j < saveDataDir.size(); j++) {
-		std::vector<File::FileInfo> fileInfo;
-		File::GetFilesInDir(saveDataDir[j], &fileInfo);
-
-		for (size_t i = 0; i < fileInfo.size(); i++) {
-			File::Delete(fileInfo[i].fullName);
-		}
-
-		File::DeleteDir(saveDataDir[j]);
+		INFO_LOG(Log::System, "Deleting savedata from %s", saveDataDir[j].c_str());
+		File::DeleteDirRecursively(saveDataDir[j]);
 	}
 	return true;
 }
@@ -498,10 +493,6 @@ public:
 
 		if (flags_ & GameInfoFlags::FILE_TYPE) {
 			info_->fileType = Identify_File(info_->GetFileLoader().get(), &errorString);
-		}
-
-		if (!info_->Ready(GameInfoFlags::FILE_TYPE) && !(flags_ & GameInfoFlags::FILE_TYPE)) {
-			_dbg_assert_(false);
 		}
 
 		switch (info_->fileType) {
@@ -935,7 +926,7 @@ void GameInfoCache::PurgeType(IdentifiedFileType fileType) {
 			}
 		}
 
-		sleep_ms(10);
+		sleep_ms(10, "game-info-cache-purge-poll");
 	} while (retry);
 }
 

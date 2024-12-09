@@ -565,6 +565,69 @@ bool DrawEngineCommon::TestBoundingBoxFast(const void *vdata, int vertexCount, u
 	return true;
 }
 
+// 2D bounding box test against scissor. No indexing yet.
+// Only supports non-indexed draws with float positions.
+bool DrawEngineCommon::TestBoundingBoxThrough(const void *vdata, int vertexCount, u32 vertType) {
+	// Grab temp buffer space from large offsets in decoded_. Not exactly safe for large draws.
+	if (vertexCount > 16) {
+		return true;
+	}
+
+	float *verts = (float *)(decoded_ + 65536 * 18);
+
+	// Although this may lead to drawing that shouldn't happen, the viewport is more complex on VR.
+	// Let's always say objects are within bounds.
+	if (gstate_c.Use(GPU_USE_VIRTUAL_REALITY))
+		return true;
+
+	// Try to skip NormalizeVertices if it's pure positions. No need to bother with a vertex decoder
+	// and a large vertex format.
+	u8 *temp_buffer = decoded_ + 65536 * 24;
+	// Simple, most common case.
+	VertexDecoder *dec = GetVertexDecoder(vertType);
+	int stride = dec->VertexSize();
+	int offset = dec->posoff;
+
+	bool allOutsideLeft = true;
+	bool allOutsideTop = true;
+	bool allOutsideRight = true;
+	bool allOutsideBottom = true;
+	const float left = gstate.getScissorX1();
+	const float top = gstate.getScissorY1();
+	const float right = gstate.getScissorX2();
+	const float bottom = gstate.getScissorY2();
+
+	switch (vertType & GE_VTYPE_POS_MASK) {
+	case GE_VTYPE_POS_FLOAT:
+	{
+		for (int i = 0; i < vertexCount; i++) {
+			float *pos = (float*)((const u8 *)vdata + stride * i + offset);
+			float x = pos[0];
+			float y = pos[1];
+			if (x >= left) {
+				allOutsideLeft = false;
+			}
+			if (x <= right + 1) {
+				allOutsideRight = false;
+			}
+			if (y >= top) {
+				allOutsideTop = false;
+			}
+			if (y <= bottom + 1) {
+				allOutsideBottom = false;
+			}
+		}
+		if (allOutsideLeft || allOutsideTop || allOutsideRight || allOutsideBottom) {
+			return false;
+		}
+		return true;
+	}
+	default:
+		_dbg_assert_(false);
+		return false;
+	}
+}
+
 // TODO: This probably is not the best interface.
 bool DrawEngineCommon::GetCurrentSimpleVertices(int count, std::vector<GPUDebugVertex> &vertices, std::vector<u16> &indices) {
 	// This is always for the current vertices.
@@ -627,6 +690,9 @@ bool DrawEngineCommon::GetCurrentSimpleVertices(int count, std::vector<GPUDebugV
 	ConvertMatrix4x3To4x4(view, gstate.viewMatrix);
 	Matrix4ByMatrix4(worldview, world, view);
 	Matrix4ByMatrix4(worldviewproj, worldview, gstate.projMatrix);
+
+	// This transforms the vertices.
+	// NOTE: We really should just run the full software transform?
 
 	vertices.resize(indexUpperBound + 1);
 	uint32_t vertType = gstate.vertType;

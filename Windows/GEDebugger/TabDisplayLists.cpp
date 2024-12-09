@@ -3,7 +3,7 @@
 #include "Windows/GEDebugger/CtrlDisplayListView.h"
 #include "Windows/MainWindow.h"
 #include "Windows/main.h"
-#include "GPU/GPUInterface.h"
+#include "GPU/GPUCommon.h"
 #include "GPU/Common/GPUDebugInterface.h"
 #include "GPU/GPUState.h"
 #include "Core/Config.h"
@@ -34,7 +34,7 @@ CtrlDisplayListStack::CtrlDisplayListStack(HWND hwnd): GenericListControl(hwnd,d
 	Update();
 }
 
-void CtrlDisplayListStack::GetColumnText(wchar_t* dest, int row, int col)
+void CtrlDisplayListStack::GetColumnText(wchar_t* dest, size_t destSize, int row, int col)
 {
 	if (row < 0 || row >= (int)ARRAY_SIZE(list.stack)) {
 		return;
@@ -85,7 +85,7 @@ CtrlAllDisplayLists::CtrlAllDisplayLists(HWND hwnd): GenericListControl(hwnd,all
 	Update();
 }
 
-void CtrlAllDisplayLists::GetColumnText(wchar_t* dest, int row, int col)
+void CtrlAllDisplayLists::GetColumnText(wchar_t* dest, size_t destSize, int row, int col)
 {
 	if (row < 0 || row >= (int)lists.size()) {
 		return;

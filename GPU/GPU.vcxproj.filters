@@ -33,7 +33,7 @@
     <ClInclude Include="GPUState.h">
       <Filter>Common</Filter>
     </ClInclude>
-    <ClInclude Include="GPUInterface.h">
+    <ClInclude Include="GPUDefinitions.h">
       <Filter>Common</Filter>
     </ClInclude>
     <ClInclude Include="GPUCommon.h">
@@ -275,6 +275,9 @@
     </ClInclude>
     <ClInclude Include="Common\VertexDecoderHandwritten.h">
       <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Debugger\State.h">
+      <Filter>Debugger</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -547,6 +550,9 @@
     </ClCompile>
     <ClCompile Include="Common\VertexDecoderHandwritten.cpp">
       <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Debugger\State.cpp">
+      <Filter>Debugger</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

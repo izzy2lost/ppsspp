@@ -230,16 +230,16 @@ std::string PathBrowser::GetFriendlyPath() const {
 	return path_.ToVisualString();
 }
 
-bool PathBrowser::GetListing(std::vector<File::FileInfo> &fileInfo, const char *filter, bool *cancel) {
+bool PathBrowser::GetListing(std::vector<File::FileInfo> &fileInfo, const char *extensionFilter, bool *cancel) {
 	std::unique_lock<std::mutex> guard(pendingLock_);
 	while (!IsListingReady() && (!cancel || !*cancel)) {
 		// In case cancel changes, just sleep. TODO: Replace with condition variable.
 		guard.unlock();
-		sleep_ms(50);
+		sleep_ms(50, "pathbrowser-poll");
 		guard.lock();
 	}
 
-	fileInfo = ApplyFilter(pendingFiles_, filter);
+	fileInfo = ApplyFilter(pendingFiles_, extensionFilter, "");
 	return true;
 }
 

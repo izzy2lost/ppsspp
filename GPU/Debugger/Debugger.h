@@ -39,9 +39,17 @@ bool IsActive();
 
 void SetBreakNext(BreakNext next);
 void SetBreakCount(int c, bool relative = false);
+BreakNext GetBreakNext();
+const char *BreakNextToString(BreakNext next);
+
+enum class NotifyResult {
+	Execute,
+	Skip,
+	Break
+};
 
 // While debugging is active, these may block.
-bool NotifyCommand(u32 pc);
+NotifyResult NotifyCommand(u32 pc);
 void NotifyDraw();
 void NotifyDisplay(u32 framebuf, u32 stride, int format);
 void NotifyBeginFrame();
@@ -52,4 +60,4 @@ int PrimsLastFrame();
 bool SetRestrictPrims(const char *rule);
 const char *GetRestrictPrims();
 
-}
+}  // namespace

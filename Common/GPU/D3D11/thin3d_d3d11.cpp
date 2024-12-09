@@ -41,7 +41,6 @@ class D3D11DepthStencilState;
 class D3D11SamplerState;
 class D3D11Buffer;
 class D3D11RasterState;
-class D3D11Framebuffer;
 
 // This must stay POD for the memcmp to work reliably.
 struct D3D11DepthStencilKey {
@@ -58,6 +57,39 @@ class D3D11DepthStencilState : public DepthStencilState {
 public:
 	~D3D11DepthStencilState() = default;
 	DepthStencilStateDesc desc;
+};
+
+// A D3D11Framebuffer is a D3D11Framebuffer plus all the textures it owns.
+class D3D11Framebuffer : public Framebuffer {
+public:
+	D3D11Framebuffer(int width, int height) {
+		width_ = width;
+		height_ = height;
+	}
+	~D3D11Framebuffer() {
+		if (colorTex)
+			colorTex->Release();
+		if (colorRTView)
+			colorRTView->Release();
+		if (colorSRView)
+			colorSRView->Release();
+		if (depthSRView)
+			depthSRView->Release();
+		if (depthStencilTex)
+			depthStencilTex->Release();
+		if (depthStencilRTView)
+			depthStencilRTView->Release();
+	}
+
+	ID3D11Texture2D *colorTex = nullptr;
+	ID3D11RenderTargetView *colorRTView = nullptr;
+	ID3D11ShaderResourceView *colorSRView = nullptr;
+	ID3D11ShaderResourceView *depthSRView = nullptr;
+	DXGI_FORMAT colorFormat = DXGI_FORMAT_UNKNOWN;
+
+	ID3D11Texture2D *depthStencilTex = nullptr;
+	ID3D11DepthStencilView *depthStencilRTView = nullptr;
+	DXGI_FORMAT depthStencilFormat = DXGI_FORMAT_UNKNOWN;
 };
 
 class D3D11DrawContext : public DrawContext {
@@ -132,7 +164,7 @@ public:
 	void DrawIndexed(int indexCount, int offset) override;
 	void DrawUP(const void *vdata, int vertexCount) override;
 	void DrawIndexedUP(const void *vdata, int vertexCount, const void *idata, int indexCount) override;
-	void DrawIndexedClippedBatchUP(const void *vdata, int vertexCount, const void *idata, int indexCount, Slice<ClippedDraw> draws) override;
+	void DrawIndexedClippedBatchUP(const void *vdata, int vertexCount, const void *idata, int indexCount, Slice<ClippedDraw> draws, const void *ub, size_t ubSize) override;
 
 	void Clear(int mask, uint32_t colorval, float depthVal, int stencilVal) override;
 
@@ -1375,7 +1407,13 @@ void D3D11DrawContext::DrawIndexedUP(const void *vdata, int vertexCount, const v
 	DrawIndexed(indexCount, 0);
 }
 
-void D3D11DrawContext::DrawIndexedClippedBatchUP(const void *vdata, int vertexCount, const void *idata, int indexCount, Slice<ClippedDraw> draws) {
+void D3D11DrawContext::DrawIndexedClippedBatchUP(const void *vdata, int vertexCount, const void *idata, int indexCount, Slice<ClippedDraw> draws, const void *ub, size_t ubSize) {
+	if (draws.is_empty() || !vertexCount || !indexCount) {
+		return;
+	}
+
+	curPipeline_ = (D3D11Pipeline *)draws[0].pipeline;
+
 	int vbyteSize = vertexCount * curPipeline_->input->stride;
 	int ibyteSize = indexCount * sizeof(u16);
 
@@ -1385,9 +1423,25 @@ void D3D11DrawContext::DrawIndexedClippedBatchUP(const void *vdata, int vertexCo
 	UpdateBuffer(upIBuffer_, (const uint8_t *)idata, 0, ibyteSize, Draw::UPDATE_DISCARD);
 	BindIndexBuffer(upIBuffer_, 0);
 
+	UpdateDynamicUniformBuffer(ub, ubSize);
 	ApplyCurrentState();
 
 	for (int i = 0; i < draws.size(); i++) {
+		if (draws[i].pipeline != curPipeline_) {
+			curPipeline_ = (D3D11Pipeline *)draws[i].pipeline;
+			ApplyCurrentState();
+			UpdateDynamicUniformBuffer(ub, ubSize);
+		}
+
+		if (draws[i].bindTexture) {
+			ID3D11ShaderResourceView *view = ((D3D11Texture *)draws[i].bindTexture)->View();
+			context_->PSSetShaderResources(0, 1, &view);
+		} else {
+			ID3D11ShaderResourceView *view = ((D3D11Framebuffer *)draws[i].bindFramebufferAsTex)->colorSRView;
+			context_->PSSetShaderResources(0, 1, &view);
+		}
+		ID3D11SamplerState *sstate = ((D3D11SamplerState *)draws[i].samplerState)->ss;
+		context_->PSSetSamplers(0, 1, &sstate);
 		D3D11_RECT rc;
 		rc.left = draws[i].clipx;
 		rc.top = draws[i].clipy;
@@ -1419,39 +1473,6 @@ uint32_t D3D11DrawContext::GetDataFormatSupport(DataFormat fmt) const {
 		support |= FMT_AUTOGEN_MIPS;
 	return support;
 }
-
-// A D3D11Framebuffer is a D3D11Framebuffer plus all the textures it owns.
-class D3D11Framebuffer : public Framebuffer {
-public:
-	D3D11Framebuffer(int width, int height) {
-		width_ = width;
-		height_ = height;
-	}
-	~D3D11Framebuffer() {
-		if (colorTex)
-			colorTex->Release();
-		if (colorRTView)
-			colorRTView->Release();
-		if (colorSRView)
-			colorSRView->Release();
-		if (depthSRView)
-			depthSRView->Release();
-		if (depthStencilTex)
-			depthStencilTex->Release();
-		if (depthStencilRTView)
-			depthStencilRTView->Release();
-	}
-
-	ID3D11Texture2D *colorTex = nullptr;
-	ID3D11RenderTargetView *colorRTView = nullptr;
-	ID3D11ShaderResourceView *colorSRView = nullptr;
-	ID3D11ShaderResourceView *depthSRView = nullptr;
-	DXGI_FORMAT colorFormat = DXGI_FORMAT_UNKNOWN;
-
-	ID3D11Texture2D *depthStencilTex = nullptr;
-	ID3D11DepthStencilView *depthStencilRTView = nullptr;
-	DXGI_FORMAT depthStencilFormat = DXGI_FORMAT_UNKNOWN;
-};
 
 Framebuffer *D3D11DrawContext::CreateFramebuffer(const FramebufferDesc &desc) {
 	HRESULT hr;

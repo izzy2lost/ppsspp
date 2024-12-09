@@ -48,10 +48,12 @@
 
 #include "Common/Data/Collections/TinySet.h"
 #include "Common/Data/Collections/FastVec.h"
+#include "Common/Data/Collections/CharQueue.h"
 #include "Common/Data/Convert/SmallDataConvert.h"
 #include "Common/Data/Text/Parsers.h"
 #include "Common/Data/Text/WrapText.h"
 #include "Common/Data/Encoding/Utf8.h"
+#include "Common/Buffer.h"
 #include "Common/File/Path.h"
 #include "Common/Input/InputState.h"
 #include "Common/Math/math_util.h"
@@ -987,14 +989,13 @@ bool TestIniFile() {
 	const std::string testLine2 = "# Just a comment";
 
 	std::string temp;
-	ParsedIniLine line;
-	line.ParseFrom(testLine);
+	ParsedIniLine line(testLine);
 	line.Reconstruct(&temp);
 	EXPECT_EQ_STR(testLine, temp);
 
 	temp.clear();
-	line.ParseFrom(testLine2);
-	line.Reconstruct(&temp);
+	ParsedIniLine line2(testLine2);
+	line2.Reconstruct(&temp);
 
 	EXPECT_EQ_STR(testLine2, temp);
 	return true;
@@ -1031,6 +1032,63 @@ bool TestColorConv() {
 		EXPECT_EQ_INT(reference, value);
 	}
 
+	return true;
+}
+
+CharQueue GetQueue() {
+	CharQueue queue(5);
+	return queue;
+}
+
+bool TestCharQueue() {
+	// We use a tiny block size for testing.
+	CharQueue queue = std::move(GetQueue());
+
+	// Add 16 chars.
+	queue.push_back("abcdefghijkl");
+	queue.push_back("mnop");
+
+	std::string testStr;
+	queue.iterate_blocks([&](const char *buf, size_t sz) {
+		testStr.append(buf, sz);
+		return true;
+	});
+	EXPECT_EQ_STR(testStr, std::string("abcdefghijklmnop"));
+
+	EXPECT_EQ_CHAR(queue.peek(11), 'l');
+	EXPECT_EQ_CHAR(queue.peek(12), 'm');
+	EXPECT_EQ_CHAR(queue.peek(15), 'p');
+	EXPECT_EQ_INT(queue.block_count(), 3);  // Didn't fit in the first block, so the two pushes above should have each created one additional block.
+	EXPECT_EQ_INT(queue.size(), 16);
+	char dest[15];
+	EXPECT_EQ_INT(queue.pop_front_bulk(dest, 4), 4);
+	EXPECT_EQ_INT(queue.size(), 12);
+	EXPECT_EQ_MEM(dest, "abcd", 4);
+	EXPECT_EQ_INT(queue.pop_front_bulk(dest, 6), 6);
+	EXPECT_EQ_INT(queue.size(), 6);
+	EXPECT_EQ_MEM(dest, "efghij", 6);
+	queue.push_back("qr");
+	EXPECT_EQ_INT(queue.pop_front_bulk(dest, 4), 4);  // should pop off klmn
+	EXPECT_EQ_MEM(dest, "klmn", 4);
+	EXPECT_EQ_INT(queue.size(), 4);
+	EXPECT_EQ_CHAR(queue.peek(3), 'r');
+	queue.pop_front_bulk(dest, 4);
+	EXPECT_EQ_MEM(dest, "opqr", 4);
+	EXPECT_TRUE(queue.empty());
+	queue.push_back("asdf");
+	EXPECT_EQ_INT(queue.next_crlf_offset(), -1);
+	queue.push_back("\r\r\n");
+	EXPECT_EQ_INT(queue.next_crlf_offset(), 5);
+	return true;
+}
+
+bool TestBuffer() {
+	Buffer b = Buffer::Void();
+	b.Append("hello");
+	b.Append("world");
+	std::string temp;
+	b.Take(10, &temp);
+	EXPECT_EQ_STR(temp, std::string("helloworld"));
 	return true;
 }
 
@@ -1094,6 +1152,8 @@ TestItem availableTests[] = {
 	TEST_ITEM(Substitutions),
 	TEST_ITEM(IniFile),
 	TEST_ITEM(ColorConv),
+	TEST_ITEM(CharQueue),
+	TEST_ITEM(Buffer),
 };
 
 int main(int argc, const char *argv[]) {

@@ -18,7 +18,7 @@
 #pragma once
 
 #include "Common/Data/Collections/Hashmaps.h"
-#include "GPU/GPUInterface.h"
+#include "GPU/GPUCommon.h"
 #include "GPU/GPUState.h"
 #include "Common/GPU/Vulkan/VulkanContext.h"
 #include "GPU/Common/TextureCacheCommon.h"
@@ -90,7 +90,7 @@ protected:
 	void BindAsClutTexture(Draw::Texture *tex, bool smooth) override;
 	void ApplySamplingParams(const SamplerCacheKey &key) override;
 	void BoundFramebufferTexture() override;
-	void *GetNativeTextureView(const TexCacheEntry *entry) override;
+	void *GetNativeTextureView(const TexCacheEntry *entry, bool flat) const override;
 
 private:
 	void LoadVulkanTextureLevel(TexCacheEntry &entry, uint8_t *writePtr, int rowPitch,  int level, int scaleFactor, VkFormat dstFmt);

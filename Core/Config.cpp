@@ -53,6 +53,7 @@
 #include "Core/ConfigValues.h"
 #include "Core/Loaders.h"
 #include "Core/KeyMap.h"
+#include "Core/System.h"
 #include "Core/HLE/sceUtility.h"
 #include "Core/Instance.h"
 #include "GPU/Common/FramebufferManagerCommon.h"
@@ -206,6 +207,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("IgnoreBadMemAccess", &g_Config.bIgnoreBadMemAccess, true, CfgFlag::DEFAULT),
 	ConfigSetting("CurrentDirectory", &g_Config.currentDirectory, "", CfgFlag::DEFAULT),
 	ConfigSetting("ShowDebuggerOnLoad", &g_Config.bShowDebuggerOnLoad, false, CfgFlag::DEFAULT),
+	ConfigSetting("ShowImDebugger", &g_Config.bShowImDebugger, false, CfgFlag::DONT_SAVE),
 	ConfigSetting("CheckForNewVersion", &g_Config.bCheckForNewVersion, true, CfgFlag::DEFAULT),
 	ConfigSetting("Language", &g_Config.sLanguageIni, &DefaultLangRegion, CfgFlag::DEFAULT),
 	ConfigSetting("ForceLagSync2", &g_Config.bForceLagSync, false, CfgFlag::PER_GAME),
@@ -602,7 +604,6 @@ static const ConfigSetting graphicsSettings[] = {
 #if PPSSPP_PLATFORM(ANDROID) && PPSSPP_ARCH(ARM64)
 	ConfigSetting("CustomDriver", &g_Config.sCustomDriver, "", CfgFlag::DEFAULT),
 #endif
-	ConfigSetting("FailedGraphicsBackends", &g_Config.sFailedGPUBackends, "", CfgFlag::DEFAULT),
 	ConfigSetting("DisabledGraphicsBackends", &g_Config.sDisabledGPUBackends, "", CfgFlag::DEFAULT),
 	ConfigSetting("VulkanDevice", &g_Config.sVulkanDevice, "", CfgFlag::DEFAULT),
 #ifdef _WIN32
@@ -1089,10 +1090,11 @@ void Config::Reload() {
 void Config::UpdateIniLocation(const char *iniFileName, const char *controllerIniFilename) {
 	const bool useIniFilename = iniFileName != nullptr && strlen(iniFileName) > 0;
 	const char *ppssppIniFilename = IsVREnabled() ? "ppssppvr.ini" : "ppsspp.ini";
-	iniFilename_ = FindConfigFile(useIniFilename ? iniFileName : ppssppIniFilename);
+	bool exists;
+	iniFilename_ = FindConfigFile(useIniFilename ? iniFileName : ppssppIniFilename, &exists);
 	const bool useControllerIniFilename = controllerIniFilename != nullptr && strlen(controllerIniFilename) > 0;
 	const char *controlsIniFilename = IsVREnabled() ? "controlsvr.ini" : "controls.ini";
-	controllerIniFilename_ = FindConfigFile(useControllerIniFilename ? controllerIniFilename : controlsIniFilename);
+	controllerIniFilename_ = FindConfigFile(useControllerIniFilename ? controllerIniFilename : controlsIniFilename, &exists);
 }
 
 bool Config::LoadAppendedConfig() {
@@ -1168,7 +1170,7 @@ void Config::Load(const char *iniFileName, const char *controllerIniFilename) {
 #ifdef _DEBUG
 	debugDefaults = true;
 #endif
-	LogManager::GetInstance()->LoadConfig(log, debugDefaults);
+	g_logManager.LoadConfig(log, debugDefaults);
 
 	Section *recent = iniFile.GetOrCreateSection("Recent");
 	recent->Get("MaxRecent", &iMaxRecent, 60);
@@ -1369,8 +1371,7 @@ bool Config::Save(const char *saveReason) {
 		control->Delete("DPadRadius");
 
 		Section *log = iniFile.GetOrCreateSection(logSectionName);
-		if (LogManager::GetInstance())
-			LogManager::GetInstance()->SaveConfig(log);
+		g_logManager.SaveConfig(log);
 
 		// Time tracking
 		Section *playTime = iniFile.GetOrCreateSection("PlayTime");
@@ -1659,27 +1660,33 @@ void Config::SetSearchPath(const Path &searchPath) {
 	searchPath_ = searchPath;
 }
 
-const Path Config::FindConfigFile(const std::string &baseFilename) {
+const Path Config::FindConfigFile(const std::string &baseFilename, bool *exists) {
 	// Don't search for an absolute path.
 	if (baseFilename.size() > 1 && baseFilename[0] == '/') {
-		return Path(baseFilename);
+		Path path(baseFilename);
+		*exists = File::Exists(path);
+		return path;
 	}
 #ifdef _WIN32
 	if (baseFilename.size() > 3 && baseFilename[1] == ':' && (baseFilename[2] == '/' || baseFilename[2] == '\\')) {
-		return Path(baseFilename);
+		Path path(baseFilename);
+		*exists = File::Exists(path);
+		return path;
 	}
 #endif
 
 	Path filename = searchPath_ / baseFilename;
 	if (File::Exists(filename)) {
+		*exists = true;
 		return filename;
 	}
-
+	*exists = false;
 	// Make sure at least the directory it's supposed to be in exists.
-	Path path = filename.NavigateUp();
-	// This check is just to avoid logging.
-	if (!File::Exists(path)) {
-		File::CreateFullPath(path);
+	Path parent = filename.NavigateUp();
+
+	// We try to create the path and ignore if it fails (already exists).
+	if (parent != GetSysDirectory(DIRECTORY_SYSTEM)) {
+		File::CreateFullPath(parent);
 	}
 	return filename;
 }
@@ -1709,8 +1716,9 @@ void Config::RestoreDefaults(RestoreSettingsBits whatToRestore) {
 }
 
 bool Config::hasGameConfig(const std::string &pGameId) {
-	Path fullIniFilePath = getGameConfigFile(pGameId);
-	return File::Exists(fullIniFilePath);
+	bool exists = false;
+	Path fullIniFilePath = getGameConfigFile(pGameId, &exists);
+	return exists;
 }
 
 void Config::changeGameSpecific(const std::string &pGameId, const std::string &title) {
@@ -1722,9 +1730,11 @@ void Config::changeGameSpecific(const std::string &pGameId, const std::string &t
 }
 
 bool Config::createGameConfig(const std::string &pGameId) {
-	Path fullIniFilePath = getGameConfigFile(pGameId);
+	bool exists;
+	Path fullIniFilePath = getGameConfigFile(pGameId, &exists);
 
-	if (hasGameConfig(pGameId)) {
+	if (exists) {
+		INFO_LOG(Log::System, "Game config already exists");
 		return false;
 	}
 
@@ -1733,16 +1743,19 @@ bool Config::createGameConfig(const std::string &pGameId) {
 }
 
 bool Config::deleteGameConfig(const std::string& pGameId) {
-	Path fullIniFilePath = Path(getGameConfigFile(pGameId));
+	bool exists;
+	Path fullIniFilePath = Path(getGameConfigFile(pGameId, &exists));
 
-	File::Delete(fullIniFilePath);
+	if (exists) {
+		File::Delete(fullIniFilePath);
+	}
 	return true;
 }
 
-Path Config::getGameConfigFile(const std::string &pGameId) {
+Path Config::getGameConfigFile(const std::string &pGameId, bool *exists) {
 	const char *ppssppIniFilename = IsVREnabled() ? "_ppssppvr.ini" : "_ppsspp.ini";
 	std::string iniFileName = pGameId + ppssppIniFilename;
-	Path iniFileNameFull = FindConfigFile(iniFileName);
+	Path iniFileNameFull = FindConfigFile(iniFileName, exists);
 
 	return iniFileNameFull;
 }
@@ -1752,7 +1765,8 @@ bool Config::saveGameConfig(const std::string &pGameId, const std::string &title
 		return false;
 	}
 
-	Path fullIniFilePath = getGameConfigFile(pGameId);
+	bool exists;
+	Path fullIniFilePath = getGameConfigFile(pGameId, &exists);
 
 	IniFile iniFile;
 
@@ -1789,9 +1803,9 @@ bool Config::saveGameConfig(const std::string &pGameId, const std::string &title
 }
 
 bool Config::loadGameConfig(const std::string &pGameId, const std::string &title) {
-	Path iniFileNameFull = getGameConfigFile(pGameId);
-
-	if (!hasGameConfig(pGameId)) {
+	bool exists;
+	Path iniFileNameFull = getGameConfigFile(pGameId, &exists);
+	if (!exists) {
 		DEBUG_LOG(Log::Loader, "No game-specific settings found in %s. Using global defaults.", iniFileNameFull.c_str());
 		return false;
 	}

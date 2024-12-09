@@ -47,7 +47,7 @@ void GamepadUpdateOpacity(float force) {
 		g_gamepadOpacity = force;
 		return;
 	}
-	if (coreState != CORE_RUNNING) {
+	if (coreState != CORE_RUNNING_CPU) {
 		g_gamepadOpacity = 0.0f;
 		return;
 	}
@@ -107,10 +107,12 @@ bool MultiTouchButton::Touch(const TouchInput &input) {
 		usedPointerMask |= 1 << input.id;
 	}
 	if (input.flags & TOUCH_MOVE) {
-		if (bounds_.Contains(input.x, input.y) && !(analogPointerMask & (1 << input.id)))
-			pointerDownMask_ |= 1 << input.id;
-		else
-			pointerDownMask_ &= ~(1 << input.id);
+		if (!(input.flags & TOUCH_MOUSE) || input.buttons) {
+			if (bounds_.Contains(input.x, input.y) && !(analogPointerMask & (1 << input.id)))
+				pointerDownMask_ |= 1 << input.id;
+			else
+				pointerDownMask_ &= ~(1 << input.id);
+		}
 	}
 	if (input.flags & TOUCH_UP) {
 		pointerDownMask_ &= ~(1 << input.id);
@@ -291,11 +293,13 @@ bool PSPDpad::Touch(const TouchInput &input) {
 		}
 	}
 	if (input.flags & TOUCH_MOVE) {
-		if (dragPointerId_ == -1 && bounds_.Contains(input.x, input.y) && !(analogPointerMask & (1 << input.id))) {
-			dragPointerId_ = input.id;
-		}
-		if (input.id == dragPointerId_) {
-			ProcessTouch(input.x, input.y, true);
+		if (!(input.flags & TOUCH_MOUSE) || input.buttons) {
+			if (dragPointerId_ == -1 && bounds_.Contains(input.x, input.y) && !(analogPointerMask & (1 << input.id))) {
+				dragPointerId_ = input.id;
+			}
+			if (input.id == dragPointerId_) {
+				ProcessTouch(input.x, input.y, true);
+			}
 		}
 	}
 	if (input.flags & TOUCH_UP) {
@@ -917,7 +921,7 @@ UI::ViewGroup *CreatePadLayout(float xres, float yres, bool *pause, bool showPau
 	if (fastForward) {
 		fastForward->SetAngle(180.0f);
 		fastForward->OnChange.Add([](UI::EventParams &e) {
-			if (e.a && coreState == CORE_STEPPING) {
+			if (e.a && coreState == CORE_STEPPING_CPU) {
 				Core_Resume();
 			}
 			return UI::EVENT_DONE;

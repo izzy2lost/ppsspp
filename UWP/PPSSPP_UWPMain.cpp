@@ -72,10 +72,10 @@ PPSSPP_UWPMain::PPSSPP_UWPMain(App ^app, const std::shared_ptr<DX::DeviceResourc
 	ctx_.reset(new UWPGraphicsContext(deviceResources));
 
 #if _DEBUG
-		LogManager::GetInstance()->SetAllLogLevels(LogLevel::LDEBUG);
+		g_logManager.SetAllLogLevels(LogLevel::LDEBUG);
 
 		if (g_Config.bEnableLogging) {
-			LogManager::GetInstance()->ChangeFileLog(GetLogFile().c_str());
+			g_logManager.ChangeFileLog(GetLogFile().c_str());
 		}
 #endif
 
@@ -513,6 +513,9 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 			break;
 		case BrowseFileType::ZIP:
 			supportedExtensions = { ".zip" };
+			break;
+		case BrowseFileType::SYMBOL_MAP:
+			supportedExtensions = { ".map" };
 			break;
 		case BrowseFileType::DB:
 			supportedExtensions = { ".db" };

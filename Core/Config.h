@@ -150,7 +150,7 @@ public:
 	// GFX
 	int iGPUBackend;
 	std::string sCustomDriver;
-	std::string sFailedGPUBackends;
+	std::string sFailedGPUBackends;  // NOT stored in ppsspp.ini anymore!
 	std::string sDisabledGPUBackends;
 	// We have separate device parameters for each backend so it doesn't get erased if you switch backends.
 	// If not set, will use the "best" device.
@@ -189,6 +189,8 @@ public:
 	bool bSustainedPerformanceMode;  // Android: Slows clocks down to avoid overheating/speed fluctuations.
 	bool bIgnoreScreenInsets;  // Android: Center screen disregarding insets if this is enabled.
 	bool bVSync;
+
+	bool bShowImDebugger;
 
 	int iFrameSkip;
 	int iFrameSkipType;
@@ -583,11 +585,11 @@ public:
 	bool loadGameConfig(const std::string &game_id, const std::string &title);
 	bool saveGameConfig(const std::string &pGameId, const std::string &title);
 	void unloadGameConfig();
-	Path getGameConfigFile(const std::string &gameId);
+	Path getGameConfigFile(const std::string &gameId, bool *exists);
 	bool hasGameConfig(const std::string &game_id);
 
 	void SetSearchPath(const Path &path);
-	const Path FindConfigFile(const std::string &baseFilename);
+	const Path FindConfigFile(const std::string &baseFilename, bool *exists);
 
 	void UpdateIniLocation(const char *iniFileName = nullptr, const char *controllerIniFilename = nullptr);
 

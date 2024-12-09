@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.system.StructStatVfs;
 import android.system.Os;
@@ -161,14 +162,14 @@ public class PpssppActivity extends NativeActivity {
 		// Filter out any virtual or partial nonsense.
 		// There's a bunch of potentially-interesting flags here btw,
 		// to figure out how to set access flags better, etc.
+		// Like FLAG_SUPPORTS_WRITE etc.
 		if ((flags & (DocumentsContract.Document.FLAG_PARTIAL | DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT)) != 0) {
 			return null;
 		}
-
 		final String mimeType = c.getString(3);
 		final boolean isDirectory = mimeType.equals(DocumentsContract.Document.MIME_TYPE_DIR);
 		final String documentName = c.getString(0);
-		final long size = c.getLong(1);
+		final long size = isDirectory ? 0 : c.getLong(1);
 		final long lastModified = c.getLong(4);
 
 		String str = "F|";
@@ -258,6 +259,9 @@ public class PpssppActivity extends NativeActivity {
 			final Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
 					uri, DocumentsContract.getDocumentId(uri));
 			final ArrayList<String> listing = new ArrayList<>();
+
+			String selection = null;
+			String[] selectionArgs = null;
 			c = resolver.query(childrenUri, columns, null, null, null);
 			if (c == null) {
 				return new String[]{ "X" };

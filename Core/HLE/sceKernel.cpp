@@ -37,7 +37,7 @@
 #include "Core/Reporting.h"
 #include "Core/SaveState.h"
 #include "Core/System.h"
-#include "GPU/GPUInterface.h"
+#include "GPU/GPUCommon.h"
 #include "GPU/GPUState.h"
 
 #include "__sceAudio.h"
@@ -481,8 +481,7 @@ u32 sceKernelIcacheClearAll()
 	return 0;
 }
 
-void KernelObject::GetQuickInfo(char *ptr, int size)
-{
+void KernelObject::GetQuickInfo(char *ptr, int size) {
 	strcpy(ptr, "-");
 }
 
@@ -508,14 +507,6 @@ SceUID KernelObjectPool::Create(KernelObject *obj, int rangeBottom, int rangeTop
 
 	ERROR_LOG_REPORT(Log::sceKernel, "Unable to allocate kernel object, too many objects slots in use.");
 	return 0;
-}
-
-bool KernelObjectPool::IsValid(SceUID handle) const {
-	int index = handle - handleOffset;
-	if (index < 0 || index >= maxCount)
-		return false;
-	else
-		return occupied[index];
 }
 
 void KernelObjectPool::Clear() {

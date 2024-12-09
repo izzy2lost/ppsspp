@@ -54,7 +54,7 @@
 
 #include "GPU/GPU.h"
 #include "GPU/GPUState.h"
-#include "GPU/GPUInterface.h"
+#include "GPU/GPUCommon.h"
 #include "GPU/Common/FramebufferManagerCommon.h"
 #include "GPU/Common/PostShader.h"
 #include "GPU/Debugger/Record.h"
@@ -445,7 +445,7 @@ static void DoFrameTiming(bool throttle, bool *skipFrame, float scaledTimestep, 
 			if (endOfFrame) {
 				g_frameTiming.DeferWaitUntil(nextFrameTime, &curFrameTime);
 			} else {
-				WaitUntil(curFrameTime, nextFrameTime);
+				WaitUntil(curFrameTime, nextFrameTime, "display-wait");
 				curFrameTime = time_now_d();  // I guess we could also just set it to nextFrameTime...
 			}
 		}
@@ -483,7 +483,7 @@ static void DoFrameIdleTiming() {
 		double cur_time;
 		while ((cur_time = time_now_d()) < goal) {
 #ifdef _WIN32
-			sleep_ms(1);
+			sleep_ms(1, "frame-idle");
 #else
 			const double left = goal - cur_time;
 			if (left > 0.0f && left < 1.0f) {  // Sanity check

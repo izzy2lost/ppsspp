@@ -36,17 +36,35 @@ static int primsLastFrame = 0;
 static int primsThisFrame = 0;
 static int thisFlipNum = 0;
 
+bool g_drawNotified = false;
+
 static double lastStepTime = -1.0;
+static uint32_t g_skipPcOnce = 0;
 
 static std::vector<std::pair<int, int>> restrictPrimRanges;
 static std::string restrictPrimRule;
+
+const char *BreakNextToString(BreakNext next) {
+	switch (next) {
+	case BreakNext::NONE: return "NONE,";
+	case BreakNext::OP: return "OP";
+	case BreakNext::DRAW: return "DRAW";
+	case BreakNext::TEX: return "TEX";
+	case BreakNext::NONTEX: return "NONTEX";
+	case BreakNext::FRAME: return "FRAME";
+	case BreakNext::VSYNC: return "VSYNC";
+	case BreakNext::PRIM: return "PRIM";
+	case BreakNext::CURVE: return "CURVE";
+	case BreakNext::COUNT: return "COUNT";
+	default: return "N/A";
+	}
+}
 
 static void Init() {
 	if (!inited) {
 		GPUBreakpoints::Init([](bool flag) {
 			hasBreakpoints = flag;
 		});
-		Core_ListenStopRequest(&GPUStepping::ForceUnpause);
 		inited = true;
 	}
 }
@@ -67,6 +85,10 @@ bool IsActive() {
 	return active;
 }
 
+BreakNext GetBreakNext() {
+	return breakNext;
+}
+
 void SetBreakNext(BreakNext next) {
 	SetActive(true);
 	breakNext = next;
@@ -82,7 +104,9 @@ void SetBreakNext(BreakNext next) {
 		GPUBreakpoints::AddCmdBreakpoint(GE_CMD_BEZIER, true);
 		GPUBreakpoints::AddCmdBreakpoint(GE_CMD_SPLINE, true);
 	}
-	GPUStepping::ResumeFromStepping();
+	if (GPUStepping::IsStepping()) {
+		GPUStepping::ResumeFromStepping();
+	}
 	lastStepTime = next == BreakNext::NONE ? -1.0 : time_now_d();
 }
 
@@ -94,20 +118,18 @@ void SetBreakCount(int c, bool relative) {
 	}
 }
 
-static bool IsBreakpoint(u32 pc, u32 op) {
-	if (breakNext == BreakNext::OP) {
-		return true;
-	} else if (breakNext == BreakNext::COUNT) {
-		return primsThisFrame == breakAtCount;
-	} else if (hasBreakpoints) {
-		return GPUBreakpoints::IsBreakpoint(pc, op);
+NotifyResult NotifyCommand(u32 pc) {
+	if (!active) {
+		_dbg_assert_(false);
+		return NotifyResult::Skip;  // return false
 	}
-	return false;
-}
 
-bool NotifyCommand(u32 pc) {
-	if (!active)
-		return true;
+	// Hack to handle draw notifications, that don't come in via NotifyCommand.
+	if (g_drawNotified) {
+		g_drawNotified = false;
+		return NotifyResult::Break;
+	}
+
 	u32 op = Memory::ReadUnchecked_U32(pc);
 	u32 cmd = op >> 24;
 	if (thisFlipNum != gpuStats.numFlips) {
@@ -131,27 +153,47 @@ bool NotifyCommand(u32 pc) {
 		}
 	}
 
-	if (IsBreakpoint(pc, op)) {
+	bool isBreakpoint = false;
+	if (breakNext == BreakNext::OP) {
+		isBreakpoint = true;
+	} else if (breakNext == BreakNext::COUNT) {
+		isBreakpoint = primsThisFrame == breakAtCount;
+	} else if (hasBreakpoints) {
+		isBreakpoint = GPUBreakpoints::IsBreakpoint(pc, op);
+	}
+
+	if (isBreakpoint && pc == g_skipPcOnce) {
+		INFO_LOG(Log::G3D, "Skipping break at %08x (last break was here)", g_skipPcOnce);
+		g_skipPcOnce = 0;
+		return process ? NotifyResult::Execute : NotifyResult::Skip;
+	}
+	g_skipPcOnce = 0;
+
+	if (isBreakpoint) {
 		GPUBreakpoints::ClearTempBreakpoints();
 
 		if (coreState == CORE_POWERDOWN || !gpuDebug) {
 			breakNext = BreakNext::NONE;
-			return process;
+			return process ? NotifyResult::Execute : NotifyResult::Skip;
 		}
 
-		auto info = gpuDebug->DissassembleOp(pc);
+		auto info = gpuDebug->DisassembleOp(pc);
 		if (lastStepTime >= 0.0) {
 			NOTICE_LOG(Log::G3D, "Waiting at %08x, %s (%fms)", pc, info.desc.c_str(), (time_now_d() - lastStepTime) * 1000.0);
 			lastStepTime = -1.0;
 		} else {
 			NOTICE_LOG(Log::G3D, "Waiting at %08x, %s", pc, info.desc.c_str());
 		}
-		GPUStepping::EnterStepping();
+
+		g_skipPcOnce = pc;
+		breakNext = BreakNext::NONE;
+		return NotifyResult::Break;  // new. caller will call GPUStepping::EnterStepping().
 	}
 
-	return process;
+	return process ? NotifyResult::Execute : NotifyResult::Skip;
 }
 
+// TODO: This mechanism is a bit hacky.
 void NotifyDraw() {
 	if (!active)
 		return;
@@ -162,7 +204,7 @@ void NotifyDraw() {
 		} else {
 			NOTICE_LOG(Log::G3D, "Waiting at a draw");
 		}
-		GPUStepping::EnterStepping();
+		g_drawNotified = true;
 	}
 }
 

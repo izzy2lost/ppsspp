@@ -653,6 +653,7 @@ add_library(Common STATIC
 	Common/Data/Collections/Hashmaps.h
 	Common/Data/Collections/TinySet.h
 	Common/Data/Collections/FastVec.h
+	Common/Data/Collections/CharQueue.h
 	Common/Data/Collections/CyclicBuffer.h
 	Common/Data/Collections/ThreadSafeList.h
 	Common/Data/Color/RGBAUtil.cpp
@@ -884,6 +885,8 @@ add_library(Common STATIC
 	Common/FakeCPUDetect.cpp
 	Common/ExceptionHandlerSetup.cpp
 	Common/ExceptionHandlerSetup.h
+	Common/GhidraClient.h
+	Common/GhidraClient.cpp
 	Common/Log.h
 	Common/Log.cpp
 	Common/Log/ConsoleListener.cpp
@@ -1521,8 +1524,12 @@ list(APPEND NativeAppSource
 	android/jni/TestRunner.cpp
 	UI/ImDebugger/ImDebugger.cpp
 	UI/ImDebugger/ImDebugger.h
+	UI/ImDebugger/ImGe.cpp
+	UI/ImDebugger/ImGe.h
 	UI/ImDebugger/ImDisasmView.cpp
 	UI/ImDebugger/ImDisasmView.h
+	UI/ImDebugger/ImStructViewer.cpp
+	UI/ImDebugger/ImStructViewer.h
 	UI/DiscordIntegration.cpp
 	UI/NativeApp.cpp
 	UI/BackgroundAudio.h
@@ -1963,11 +1970,13 @@ set(GPU_SOURCES
 	GPU/Debugger/Record.cpp
 	GPU/Debugger/Record.h
 	GPU/Debugger/RecordFormat.h
+	GPU/Debugger/State.cpp
+	GPU/Debugger/State.h
 	GPU/Debugger/Stepping.cpp
 	GPU/Debugger/Stepping.h
 	GPU/ge_constants.h
 	GPU/GeConstants.cpp
-	GPU/GPUInterface.h
+	GPU/GPUDefinitions.h
 	GPU/GeDisasm.cpp
 	GPU/GeDisasm.h
 	GPU/GPU.cpp

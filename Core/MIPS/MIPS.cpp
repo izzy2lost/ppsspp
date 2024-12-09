@@ -33,7 +33,7 @@
 #include "Core/MIPS/MIPSVFPUUtils.h"
 #include "Core/MIPS/IR/IRJit.h"
 #include "Core/Reporting.h"
-#include "Core/System.h"
+#include "Core/Core.h"
 #include "Core/MIPS/JitCommon/JitCommon.h"
 #include "Core/CoreTiming.h"
 
@@ -336,6 +336,7 @@ int MIPSState::RunLoopUntil(u64 globalTicks) {
 	case CPUCore::IR_INTERPRETER:
 		while (inDelaySlot) {
 			// We must get out of the delay slot before going into jit.
+			// This normally should never take more than one step...
 			SingleStep();
 		}
 		insideJit = true;
@@ -378,7 +379,7 @@ void MIPSState::InvalidateICache(u32 address, int length) {
 void MIPSState::ClearJitCache() {
 	std::lock_guard<std::recursive_mutex> guard(MIPSComp::jitLock);
 	if (MIPSComp::jit) {
-		if (coreState == CORE_RUNNING || insideJit) {
+		if (coreState == CORE_RUNNING_CPU || insideJit) {
 			pendingClears.emplace_back(0, 0);
 			hasPendingClears = true;
 			CoreTiming::ForceCheck();

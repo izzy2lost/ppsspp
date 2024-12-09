@@ -79,6 +79,7 @@ private:
 	void bootComplete();
 	bool hasVisibleUI();
 	void renderUI();
+	void renderImDebugger();
 
 	void onVKey(int virtualKeyCode, bool down);
 	void onVKeyAnalog(int virtualKeyCode, float value);
@@ -116,7 +117,6 @@ private:
 	UI::CallbackColorTween *loadingViewColor_ = nullptr;
 	UI::VisibilityTween *loadingViewVisible_ = nullptr;
 	UI::Spinner *loadingSpinner_ = nullptr;
-	UI::TextView *loadingTextView_ = nullptr;
 	UI::Button *resumeButton_ = nullptr;
 	UI::Button *resetButton_ = nullptr;
 	UI::Button *backButton_ = nullptr;
@@ -134,5 +134,14 @@ private:
 	std::unique_ptr<ImDebugger> imDebugger_ = nullptr;
 
 	bool imguiInited_ = false;
-	bool imguiVisible_ = false;
+	// For ImGui modifier tracking
+	bool keyCtrlLeft_ = false;
+	bool keyCtrlRight_ = false;
+	bool keyShiftLeft_ = false;
+	bool keyShiftRight_ = false;
+	bool keyAltLeft_ = false;
+	bool keyAltRight_ = false;
 };
+
+bool MustRunBehind();
+bool ShouldRunBehind();

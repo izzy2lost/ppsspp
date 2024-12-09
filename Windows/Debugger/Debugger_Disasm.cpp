@@ -5,6 +5,7 @@
 
 #include "Core/Debugger/Breakpoints.h"
 #include "Core/Debugger/SymbolMap.h"
+#include "Core/RetroAchievements.h"
 #include "Windows/Debugger/BreakpointWindow.h"
 #include "Windows/Debugger/CtrlDisAsmView.h"
 #include "Windows/Debugger/Debugger_MemoryDlg.h"
@@ -93,6 +94,7 @@ static constexpr UINT UPDATE_DELAY = 1000 / 60;
 CDisasm::CDisasm(HINSTANCE _hInstance, HWND _hParent, DebugInterface *_cpu) : Dialog((LPCSTR)IDD_DISASM, _hInstance, _hParent) {
 	cpu = _cpu;
 	lastTicks_ = PSP_IsInited() ? CoreTiming::GetTicks() : 0;
+	breakpoints_ = &g_breakpoints;
 
 	SetWindowText(m_hDlg, ConvertUTF8ToWString(_cpu->GetName()).c_str());
 
@@ -208,7 +210,7 @@ void CDisasm::step(CPUStepType stepType) {
 	lastTicks_ = CoreTiming::GetTicks();
 
 	u32 stepSize = ptr->getInstructionSizeAt(cpu->GetPC());
-	Core_RequestSingleStep(stepType, stepSize);
+	Core_RequestCPUStep(stepType, stepSize);
 }
 
 void CDisasm::runToLine() {
@@ -221,22 +223,18 @@ void CDisasm::runToLine() {
 
 	lastTicks_ = CoreTiming::GetTicks();
 	ptr->setDontRedraw(true);
-	CBreakPoints::AddBreakPoint(pos,true);
+	breakpoints_->AddBreakPoint(pos,true);
 	Core_Resume();
 }
 
-BOOL CDisasm::DlgProc(UINT message, WPARAM wParam, LPARAM lParam)
-{
-	//if (!m_hDlg) return FALSE;
-	switch(message)
-	{
+BOOL CDisasm::DlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
+	switch(message) {
 	case WM_INITDIALOG:
 		// DarkModeInitDialog(m_hDlg);
 		return TRUE;
 
 	case WM_NOTIFY:
-		switch (wParam)
-		{
+		switch (wParam) {
 		case IDC_LEFTTABS:
 			leftTabs->HandleNotify(lParam);
 			break;
@@ -262,6 +260,9 @@ BOOL CDisasm::DlgProc(UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_COMMAND:
 		{
+			if (Achievements::HardcoreModeActive())
+				return TRUE;
+
 			CtrlDisAsmView *ptr = DisAsmView();
 			switch (LOWORD(wParam)) {
 			case ID_TOGGLE_BREAK:
@@ -301,7 +302,7 @@ BOOL CDisasm::DlgProc(UINT message, WPARAM wParam, LPARAM lParam)
 					if (isRunning)
 					{
 						Core_Break("cpu.breakpoint.add", 0);
-						Core_WaitInactive(200);
+						Core_WaitInactive();
 					}
 
 					BreakpointWindow bpw(m_hDlg,cpu);
@@ -405,8 +406,7 @@ BOOL CDisasm::DlgProc(UINT message, WPARAM wParam, LPARAM lParam)
 						lastTicks_ = CoreTiming::GetTicks();
 
 						// If the current PC is on a breakpoint, the user doesn't want to do nothing.
-						CBreakPoints::SetSkipFirst(currentMIPS->pc);
-
+						breakpoints_->SetSkipFirst(currentMIPS->pc);
 						Core_Resume();
 					}
 				}
@@ -431,7 +431,7 @@ BOOL CDisasm::DlgProc(UINT message, WPARAM wParam, LPARAM lParam)
 					lastTicks_ = CoreTiming::GetTicks();
 
 					// If the current PC is on a breakpoint, the user doesn't want to do nothing.
-					CBreakPoints::SetSkipFirst(currentMIPS->pc);
+					breakpoints_->SetSkipFirst(currentMIPS->pc);
 
 					hleDebugBreak();
 					Core_Resume();

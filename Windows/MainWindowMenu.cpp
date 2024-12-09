@@ -85,11 +85,13 @@ namespace MainWindow {
 			}
 		}
 
-		UINT menuEnable = menuEnableBool ? MF_ENABLED : MF_GRAYED;
-		UINT loadStateEnable = loadStateEnableBool ? MF_ENABLED : MF_GRAYED;
-		UINT saveStateEnable = saveStateEnableBool ? MF_ENABLED : MF_GRAYED;
-		UINT menuInGameEnable = state == UISTATE_INGAME ? MF_ENABLED : MF_GRAYED;
-		UINT umdSwitchEnable = state == UISTATE_INGAME && getUMDReplacePermit() ? MF_ENABLED : MF_GRAYED;
+		const UINT menuEnable = menuEnableBool ? MF_ENABLED : MF_GRAYED;
+		const UINT loadStateEnable = loadStateEnableBool ? MF_ENABLED : MF_GRAYED;
+		const UINT saveStateEnable = saveStateEnableBool ? MF_ENABLED : MF_GRAYED;
+		const UINT menuInGameEnable = state == UISTATE_INGAME ? MF_ENABLED : MF_GRAYED;
+		const UINT umdSwitchEnable = state == UISTATE_INGAME && getUMDReplacePermit() ? MF_ENABLED : MF_GRAYED;
+		const UINT debugEnable = !Achievements::HardcoreModeActive() ? MF_ENABLED : MF_GRAYED;
+		const UINT debugIngameEnable = (state == UISTATE_INGAME && !Achievements::HardcoreModeActive()) ? MF_ENABLED : MF_GRAYED;
 
 		EnableMenuItem(menu, ID_FILE_SAVESTATE_SLOT_MENU, saveStateEnable);
 		EnableMenuItem(menu, ID_FILE_SAVESTATEFILE, saveStateEnable);
@@ -101,15 +103,18 @@ namespace MainWindow {
 		EnableMenuItem(menu, ID_EMULATION_RESET, menuEnable);
 		EnableMenuItem(menu, ID_EMULATION_SWITCH_UMD, umdSwitchEnable);
 		EnableMenuItem(menu, ID_EMULATION_CHAT, g_Config.bEnableNetworkChat ? menuInGameEnable : MF_GRAYED);
-		EnableMenuItem(menu, ID_TOGGLE_BREAK, menuEnable);
-		EnableMenuItem(menu, ID_DEBUG_LOADMAPFILE, menuEnable);
-		EnableMenuItem(menu, ID_DEBUG_SAVEMAPFILE, menuEnable);
-		EnableMenuItem(menu, ID_DEBUG_LOADSYMFILE, menuEnable);
-		EnableMenuItem(menu, ID_DEBUG_SAVESYMFILE, menuEnable);
-		EnableMenuItem(menu, ID_DEBUG_RESETSYMBOLTABLE, menuEnable);
-		EnableMenuItem(menu, ID_DEBUG_SHOWDEBUGSTATISTICS, menuInGameEnable);
+		EnableMenuItem(menu, ID_TOGGLE_BREAK, debugIngameEnable);
+		EnableMenuItem(menu, ID_DEBUG_LOADMAPFILE, debugIngameEnable);
+		EnableMenuItem(menu, ID_DEBUG_SAVEMAPFILE, debugIngameEnable);
+		EnableMenuItem(menu, ID_DEBUG_LOADSYMFILE, debugIngameEnable);
+		EnableMenuItem(menu, ID_DEBUG_SAVESYMFILE, debugIngameEnable);
+		EnableMenuItem(menu, ID_DEBUG_RESETSYMBOLTABLE, debugIngameEnable);
+		EnableMenuItem(menu, ID_DEBUG_SHOWDEBUGSTATISTICS, debugEnable);
 		EnableMenuItem(menu, ID_DEBUG_EXTRACTFILE, menuEnable);
 		EnableMenuItem(menu, ID_DEBUG_MEMORYBASE, menuInGameEnable);
+		EnableMenuItem(menu, ID_DEBUG_DISASSEMBLY, debugEnable);
+		EnableMenuItem(menu, ID_DEBUG_MEMORYVIEW, debugEnable);
+		EnableMenuItem(menu, ID_DEBUG_GEDEBUGGER, debugEnable);
 
 		// While playing, this pop up doesn't work - and probably doesn't make sense.
 		EnableMenuItem(menu, ID_OPTIONS_LANGUAGE, state == UISTATE_INGAME ? MF_GRAYED : MF_ENABLED);
@@ -551,7 +556,8 @@ namespace MainWindow {
 		case ID_FILE_SAVESTATE_NEXT_SLOT_HC:
 		{
 			if (!Achievements::WarnUserIfHardcoreModeActive(true)) {
-				if (!KeyMap::PspButtonHasMappings(VIRTKEY_NEXT_SLOT)) {
+				// We let F3 (search next) in the imdebugger take priority, if active.
+				if (!KeyMap::PspButtonHasMappings(VIRTKEY_NEXT_SLOT) && !g_Config.bShowImDebugger) {
 					SaveState::NextSlot();
 					System_PostUIMessage(UIMessage::SAVESTATE_DISPLAY_SLOT);
 				}
@@ -807,7 +813,7 @@ namespace MainWindow {
 
 		case ID_DEBUG_MEMORYBASE:
 		{
-			W32Util::CopyTextToClipboard(hWnd, ConvertUTF8ToWString(StringFromFormat("%016llx", (uint64_t)(uintptr_t)Memory::base)));
+			System_CopyStringToClipboard(StringFromFormat("%016llx", (uint64_t)(uintptr_t)Memory::base));
 			break;
 		}
 
@@ -817,7 +823,6 @@ namespace MainWindow {
 			if (!InputBox_GetString(hInst, hWnd, L"Disc filename", filename, filename)) {
 				break;
 			}
-
 			const char *lastSlash = strrchr(filename.c_str(), '/');
 			if (lastSlash) {
 				fn = lastSlash + 1;
@@ -857,7 +862,7 @@ namespace MainWindow {
 		break;
 
 		case ID_DEBUG_LOG:
-			LogManager::GetInstance()->GetConsoleListener()->Show(LogManager::GetInstance()->GetConsoleListener()->Hidden());
+			g_logManager.GetConsoleListener()->Show(g_logManager.GetConsoleListener()->Hidden());
 			break;
 
 		case ID_DEBUG_IGNOREILLEGALREADS:
@@ -865,7 +870,9 @@ namespace MainWindow {
 			break;
 
 		case ID_OPTIONS_FULLSCREEN:
-			SendToggleFullscreen(!g_Config.UseFullScreen());
+			if (!g_Config.bShowImDebugger) {
+				SendToggleFullscreen(!g_Config.UseFullScreen());
+			}
 			break;
 
 		case ID_OPTIONS_TEXTUREFILTERING_AUTO:   g_Config.iTexFiltering = TEX_FILTER_AUTO; break;
